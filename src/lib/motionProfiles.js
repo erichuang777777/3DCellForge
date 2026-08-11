@@ -37,6 +37,12 @@ const MOTION_PROFILES = {
     durationMs: 7600,
     description: 'Product turntable with a push-in and detail pause.',
   },
+  oncology: {
+    id: 'oncology',
+    label: 'Pathology inspection orbit',
+    durationMs: 8000,
+    description: 'Slow, calm educational orbit for breast cancer molecular-subtype teaching illustrations.',
+  },
 }
 
 export function inferMotionProfile(cell = {}) {

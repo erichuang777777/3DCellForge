@@ -36,6 +36,7 @@ const PRESENTATION_DURATION_BY_PROFILE = {
   vessel: 8600,
   specimen: 8200,
   product: 7600,
+  oncology: 8000,
 }
 
 function smoothPingPong(elapsed, durationMs) {
@@ -133,6 +134,15 @@ function PresentationMotionRig({
       root.scale.setScalar(1)
       camera.position.set(wave * 0.42, 0.32 + lift * 0.035, 5.55 - sweep * 0.58)
       lookAt(camera, [0, 0.08, 0])
+      return
+    }
+
+    if (motionProfile === 'oncology') {
+      root.position.set(wave * 0.03, lift * 0.012, 0.04 - sweep * 0.08)
+      root.rotation.set(-0.08 + lift * 0.02, -0.42 + sweep * 0.84, wave * 0.015)
+      root.scale.setScalar(1)
+      camera.position.set(wave * 0.3, 0.24 + lift * 0.02, 5.4 - sweep * 0.4)
+      lookAt(camera, [0, 0.06, 0])
       return
     }
 
@@ -334,6 +344,24 @@ function PresentationEnvironment({ profile }) {
         {[-1.8, -1.2, -0.6, 0, 0.6, 1.2, 1.8].map((z) => (
           <Line key={`z-${z}`} points={[[-1.8, -1.36, z], [1.8, -1.36, z]]} color="#8cc4cf" lineWidth={0.8} transparent opacity={0.22} />
         ))}
+      </group>
+    )
+  }
+
+  if (profile === 'oncology') {
+    return (
+      <group>
+        <mesh position={[0, -1.4, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[2.5, 96]} />
+          <meshBasicMaterial color="#d7e6ea" transparent opacity={0.16} depthWrite={false} />
+        </mesh>
+        {[1.5, 1.9, 2.3].map((radius, index) => (
+          <mesh key={radius} position={[0, -1.36 + index * 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[radius, 0.005, 8, 128]} />
+            <meshBasicMaterial color="#7fb3c9" transparent opacity={0.24 - index * 0.05} depthWrite={false} />
+          </mesh>
+        ))}
+        <pointLight position={[0, 2.4, 2.2]} intensity={0.9} color="#eaf5f7" />
       </group>
     )
   }

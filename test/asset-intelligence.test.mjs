@@ -35,6 +35,26 @@ describe('asset intelligence', () => {
     assert.equal(intelligence.scene.label, 'Museum Turntable')
   })
 
+  it('maps breast cancer subtype illustrations to the oncology teaching scene', () => {
+    const intelligence = getAssetIntelligence({
+      name: 'Breast cancer Luminal A illustration',
+      sourceFileName: 'luminal-a-breast-cancer-diagram.png',
+    })
+
+    assert.equal(intelligence.category.id, 'oncology')
+    assert.equal(intelligence.scene.id, 'oncology')
+    assert.match(intelligence.scene.summary, /pathology|clinical/i)
+  })
+
+  it('prefers the oncology scene over the generic specimen scene when both keywords appear', () => {
+    const category = inferAssetCategory({
+      name: 'Triple negative breast cancer cell diagram',
+      sourceFileName: 'tnbc-cell-illustration.png',
+    })
+
+    assert.equal(category.id, 'oncology')
+  })
+
   it('trusts configured vision analysis over ambiguous filenames', () => {
     const intelligence = getAssetIntelligence({
       name: 'demo upload',

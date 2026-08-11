@@ -83,6 +83,20 @@ export const ASSET_CATEGORIES = [
     value: 'Use close orbit, clean rim light, and slower zooms. This works best as an educational inspection view.',
     tags: ['specimen', 'organic', 'inspection orbit', 'soft volume', 'education'],
   },
+  {
+    id: 'oncology',
+    label: 'Breast Cancer Subtype (Educational)',
+    motionProfile: 'oncology',
+    sceneProfile: 'oncology',
+    keywords: ['breast cancer', 'breast tumor', 'breast tumour', 'luminal', 'her2', 'triple negative', 'tnbc', 'basal like', 'ki-67', 'ki67', 'receptor', '乳癌', '乳腺癌', '乳腺', '管腔', '三阴', '三陰', '亚型', '亞型', '受体', '受體'],
+    strongKeywords: ['breast cancer', 'luminal a', 'luminal b', 'her2-enriched', 'her2 enriched', 'triple negative', 'tnbc', '乳癌', '乳腺癌', '三阴性', '管腔a', '管腔b'],
+    material: 'Illustrative pathology-style surface, receptor-marker color coding, non-photorealistic educational rendering',
+    scale: 'Single-cell teaching illustration, not to biological scale',
+    inspectionFocus: 'subtype label, receptor-marker color coding, overall silhouette',
+    description: 'An educational breast-cancer molecular-subtype illustration. This is a teaching aid built from an illustrative reference image, not a diagnostic or anatomically validated model.',
+    value: 'Use a calm clinical lab backdrop, slow inspection orbit, and a clearly labeled subtype badge. Always pair with an "educational illustration only" disclaimer — never present as diagnostic or treatment guidance.',
+    tags: ['oncology', 'breast cancer', 'molecular subtype', 'education only', 'not diagnostic'],
+  },
 ]
 
 export const SCENE_PROFILES = {
@@ -127,6 +141,13 @@ export const SCENE_PROFILES = {
     summary: 'Soft lab volume, microscope-style depth lines, and close orbit.',
     environment: 'lab orbit',
     badges: ['rim light', 'inspection', 'soft volume'],
+  },
+  oncology: {
+    id: 'oncology',
+    label: 'Pathology Teaching Lab',
+    summary: 'Calm clinical backdrop, subtype color badge, and a slow educational inspection orbit.',
+    environment: 'pathology lab',
+    badges: ['illustrative', 'subtype-coded', 'education only'],
   },
 }
 

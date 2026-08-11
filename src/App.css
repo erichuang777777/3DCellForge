@@ -1937,6 +1937,33 @@ button:disabled,
   animation: specimen-field-drift 6s ease-in-out infinite;
 }
 
+.presentation-motion-field.oncology span {
+  left: 14%;
+  right: 14%;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(127, 179, 201, 0.26), transparent);
+  animation: product-scanline-drift 3.6s ease-in-out infinite;
+}
+
+.presentation-motion-field.oncology span:nth-child(1) { top: 28%; animation-delay: -0.1s; }
+.presentation-motion-field.oncology span:nth-child(2) { top: 38%; animation-delay: -0.5s; opacity: 0.5; }
+.presentation-motion-field.oncology span:nth-child(3) { top: 48%; animation-delay: -0.9s; }
+.presentation-motion-field.oncology span:nth-child(4) { top: 58%; animation-delay: -1.3s; opacity: 0.5; }
+.presentation-motion-field.oncology span:nth-child(5) { top: 68%; animation-delay: -1.7s; }
+.presentation-motion-field.oncology span:nth-child(6) { top: 78%; animation-delay: -2.1s; opacity: 0.45; }
+
+.presentation-motion-field.oncology::before {
+  inset: 10% 10% 12%;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 46%, rgba(127, 179, 201, 0.14) 47% 48%, transparent 49%),
+    repeating-linear-gradient(90deg, rgba(127, 179, 201, 0.1) 0 1px, transparent 1px 40px),
+    repeating-linear-gradient(0deg, rgba(127, 179, 201, 0.08) 0 1px, transparent 1px 40px);
+  border-radius: 50%;
+  opacity: 0.8;
+  animation: specimen-field-drift 7s ease-in-out infinite;
+}
+
 .demo-showcase-title {
   position: absolute;
   top: 30px;
@@ -1975,6 +2002,66 @@ button:disabled,
   font-size: 13px;
   font-weight: 680;
   line-height: 1.42;
+}
+
+.subtype-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  margin: 4px 0 2px;
+  padding: 5px 12px 5px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--subtype-accent, #7fb3c9), white 82%);
+  color: color-mix(in srgb, var(--subtype-accent, #7fb3c9), black 45%);
+  font-size: 12.5px;
+  font-weight: 780;
+  letter-spacing: 0.01em;
+}
+
+.subtype-badge i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--subtype-accent, #7fb3c9);
+}
+
+.oncology-disclaimer-text {
+  max-width: 560px;
+  margin: 6px 0 0;
+  color: #6b7d85;
+  font-size: 11.5px;
+  font-weight: 640;
+  font-style: italic;
+}
+
+.oncology-disclaimer {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  max-width: 260px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background: rgba(20, 26, 30, 0.72);
+  color: #eef4f6;
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1.35;
+  text-align: right;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.oncology-disclaimer .subtype-badge {
+  margin: 0;
+  background: color-mix(in srgb, var(--subtype-accent, #7fb3c9), black 20%);
+  color: #fff;
 }
 
 .demo-scene-badges {
@@ -5303,6 +5390,13 @@ input:focus-visible + i {
     #eef6f7;
 }
 
+.workbench-v2.demo-mode .stage-panel.motion-oncology {
+  background:
+    radial-gradient(circle at 50% 40%, rgba(127, 179, 201, 0.16), transparent 30%),
+    linear-gradient(135deg, rgba(249, 252, 253, 0.97), rgba(224, 236, 240, 0.9)),
+    #eef4f6;
+}
+
 .workbench-v2.demo-mode .stage-panel.motion-road .cell-fallback {
   animation: demo-road-subject-drive 7.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   transform-origin: 50% 70%;
@@ -5331,6 +5425,11 @@ input:focus-visible + i {
 .workbench-v2.demo-mode .stage-panel.motion-artifact .cell-fallback {
   animation: demo-artifact-subject-turntable 9s ease-in-out infinite;
   transform-origin: 50% 62%;
+}
+
+.workbench-v2.demo-mode .stage-panel.motion-oncology .cell-fallback {
+  animation: demo-specimen-subject-orbit 8s ease-in-out infinite;
+  transform-origin: 50% 54%;
 }
 
 @media (min-width: 1600px) {
