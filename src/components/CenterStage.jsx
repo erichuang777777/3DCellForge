@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Box, Camera, CircleDot, Eye, Gauge, Layers3, Move3D, RotateCcw, Upload } from 'lucide-react'
 import { getCell, getGeneratedModelUrl, getOrganelleDetail } from '../domain/cellCatalog.js'
+import { inferBreastCancerSubtype } from '../domain/oncologySubtypes.js'
 import { downloadCanvasImage } from '../lib/downloads.js'
 import { getSceneProfile } from '../lib/assetIntelligence.js'
 import { downloadLayeredPngSnapshot } from '../lib/imagePipeline.js'
@@ -117,6 +118,8 @@ export function CenterStage({
   const quality = useMemo(() => getModelQuality(cell, activeModelMetrics, generationHistory), [activeModelMetrics, cell, generationHistory])
   const motionProfile = useMemo(() => inferMotionProfile(cell), [cell])
   const sceneProfile = useMemo(() => getSceneProfile(cell), [cell])
+  const isOncologyCell = sceneProfile.id === 'oncology'
+  const oncologySubtype = useMemo(() => (isOncologyCell ? inferBreastCancerSubtype(cell) : null), [cell, isOncologyCell])
   const viewerFallback = (
     <CellFallback
       selectedCell={selectedCell}
@@ -232,8 +235,18 @@ export function CenterStage({
         onModeChange={handleViewModeChange}
       />
       {demoMode && <PresentationMotionField profile={sceneProfile.id} />}
-      {demoMode && <DemoShowcaseOverlay cell={cell} quality={quality} referenceImageUrl={referenceImageUrl} motionProfile={motionProfile} sceneProfile={sceneProfile} />}
+      {demoMode && (
+        <DemoShowcaseOverlay
+          cell={cell}
+          quality={quality}
+          referenceImageUrl={referenceImageUrl}
+          motionProfile={motionProfile}
+          sceneProfile={sceneProfile}
+          oncologySubtype={oncologySubtype}
+        />
+      )}
       {!demoMode && <ModelQualityCard quality={quality} />}
+      {isOncologyCell && <OncologyDisclaimer subtype={oncologySubtype} />}
       <div className={`cell-viewer ${effectiveViewMode} ${effectiveIsolated ? 'is-isolated' : ''} ${generatedModelUrl ? 'has-glb' : ''} ${webglAvailable ? 'webgl-ready' : ''} ${isCinematicCell ? 'cinematic-viewer' : ''}`}>
         <ViewerErrorBoundary resetKey={viewerResetKey} onError={handleViewerError} fallback={viewerFallback}>
           {isCinematicCell ? (
@@ -358,7 +371,7 @@ export function CenterStage({
 }
 
 function PresentationMotionField({ profile }) {
-  if (!['road', 'aircraft', 'vessel', 'artifact', 'product', 'specimen'].includes(profile)) return null
+  if (!['road', 'aircraft', 'vessel', 'artifact', 'product', 'specimen', 'oncology'].includes(profile)) return null
 
   return (
     <div className={`presentation-motion-field ${profile}`} aria-hidden="true">
@@ -390,12 +403,18 @@ function ModelQualityCard({ quality }) {
   )
 }
 
-function DemoShowcaseOverlay({ cell, quality, referenceImageUrl, motionProfile, sceneProfile }) {
+function DemoShowcaseOverlay({ cell, quality, referenceImageUrl, motionProfile, sceneProfile, oncologySubtype }) {
   return (
     <div className="demo-showcase-overlay">
       <div className="demo-showcase-title">
         <span>3D Model Studio</span>
         <strong>{cell.name}</strong>
+        {oncologySubtype && (
+          <div className="subtype-badge" style={{ '--subtype-accent': oncologySubtype.accent }}>
+            <i />
+            {oncologySubtype.label}
+          </div>
+        )}
         <small>{quality.providerLabel} · {quality.hasGlb ? 'GLB asset' : quality.status} · {quality.verdict} · {motionProfile.label}</small>
         <p>{sceneProfile.summary}</p>
         <div className="demo-scene-badges">
@@ -403,6 +422,9 @@ function DemoShowcaseOverlay({ cell, quality, referenceImageUrl, motionProfile, 
             <em key={badge}>{badge}</em>
           ))}
         </div>
+        {sceneProfile.id === 'oncology' && (
+          <p className="oncology-disclaimer-text">Educational illustration only — not a diagnostic image or treatment guidance.</p>
+        )}
       </div>
       <div className="demo-metric-strip">
         <span><strong>{quality.score}</strong><small>score</small></span>
@@ -417,6 +439,20 @@ function DemoShowcaseOverlay({ cell, quality, referenceImageUrl, motionProfile, 
           <span>source</span>
         </div>
       )}
+    </div>
+  )
+}
+
+function OncologyDisclaimer({ subtype }) {
+  return (
+    <div className="oncology-disclaimer" role="note">
+      {subtype && (
+        <span className="subtype-badge" style={{ '--subtype-accent': subtype.accent }}>
+          <i />
+          {subtype.label}
+        </span>
+      )}
+      <span>Educational illustration only — not a diagnostic image or treatment guidance.</span>
     </div>
   )
 }
