@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>乳房重建 3D 圖譜</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap">
+<style>
+/* Layout: 頁首 → 情境選單 → 3D 舞台(圖層、視角、模式控制) + 側欄(步驟/結構說明) → 優缺點 → 對照表 → 來源與授權 */
+:root {
+  --bg: #eef1ef;
+  --paper: #f7f5ef;
+  --surface: #ffffff;
+  --fg: #1f2a2c;
+  --muted: #5a6766;
+  --line: #d4dbd8;
+  --accent: #8a2f2a;
+  --accent-soft: #f3e3df;
+  --teal: #1f6a6f;
+  --ink: #2a211c;
+  --warn-bg: #fbefcc;
+  --warn-fg: #6b4a00;
+  --good: #2f6b3c;
+  --bad: #8a3a2a;
+  --font-display: "Noto Serif TC", "Songti TC", "PMingLiU", serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121716; --paper: #1b2120; --surface: #1d2423; --fg: #e7ecea; --muted: #a3b0ad; --line: #33403e;
+    --accent: #e08b80; --accent-soft: #3a2422; --teal: #6cc3c8; --ink: #e7ecea;
+    --warn-bg: #3a3016; --warn-fg: #f1d68e; --good: #8fd19c; --bad: #f0a48f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121716; --paper: #1b2120; --surface: #1d2423; --fg: #e7ecea; --muted: #a3b0ad; --line: #33403e;
+  --accent: #e08b80; --accent-soft: #3a2422; --teal: #6cc3c8; --ink: #e7ecea;
+  --warn-bg: #3a3016; --warn-fg: #f1d68e; --good: #8fd19c; --bad: #f0a48f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.65; margin: 0; padding-inline: 16px; padding-block: 20px 48px; }
+.wrap { max-width: 1240px; margin-inline: auto; display: flex; flex-direction: column; gap: 20px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; line-height: 1.3; text-wrap: balance; }
+h1 { font-size: 26px; }
+h2 { font-size: 19px; }
+h3 { font-size: 16px; }
+p { margin: 0; }
+a { color: var(--teal); }
+button { font: inherit; }
+
+.top { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: flex-start; justify-content: space-between; }
+.top > div { flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.sub { color: var(--muted); max-width: 66ch; }
+.badge { background: var(--warn-bg); color: var(--warn-fg); border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tab { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 7px 14px; cursor: pointer; font-size: 14px; min-height: 38px; }
+.tab small { color: var(--muted); margin-left: 4px; font-size: 12px; }
+.tab[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.tab[aria-pressed="true"] small { color: inherit; opacity: .85; }
+.tab:focus-visible, .ctl:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); } }
+
+.stagebox { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; min-width: 0; }
+#stage { display: block; width: 100%; height: min(72vh, 680px); min-height: 420px; touch-action: none; cursor: grab; }
+.overlay { position: absolute; display: flex; gap: 6px; flex-wrap: wrap; }
+.ov-top { top: 10px; left: 10px; right: 10px; justify-content: space-between; pointer-events: none; }
+.ov-top > * { pointer-events: auto; }
+.ctlgroup { display: inline-flex; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.ctl { border: 0; background: transparent; color: var(--muted); padding: 6px 11px; font-size: 13px; cursor: pointer; min-height: 34px; }
+.ctl + .ctl { border-left: 1px solid var(--line); }
+.ctl[aria-pressed="true"] { background: var(--teal); color: var(--surface); font-weight: 700; }
+.peel { position: absolute; right: 10px; bottom: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; width: min(300px, calc(100% - 20px)); }
+.peel label { font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.peel label b { color: var(--fg); }
+.peel input { width: 100%; accent-color: var(--accent); }
+.peel .ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.cmpbar { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap; max-width: calc(100% - 340px); }
+@media (max-width: 640px) { .cmpbar { position: static; max-width: none; padding: 8px 10px 0; } }
+.cmpbar select { font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); min-height: 34px; }
+.cmplabels { position: absolute; top: 56px; left: 0; right: 0; display: flex; pointer-events: none; }
+.cmplabels span { flex: 1; text-align: center; font-family: var(--font-display); font-weight: 700; color: var(--ink); font-size: 15px; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; background: var(--paper); }
+.callout { position: absolute; pointer-events: none; background: var(--surface); color: var(--fg); border: 1px solid var(--ink); border-radius: 6px; padding: 3px 8px; font-size: 12px; white-space: nowrap; transform: translate(-50%, -130%); }
+
+.side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.panel .eyebrow { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: .05em; }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.steps button { width: 100%; text-align: left; border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 8px; padding: 6px 8px; cursor: pointer; display: flex; gap: 8px; font-size: 14px; }
+.steps button .n { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 1.4em; }
+.steps button[aria-current="step"] { background: var(--accent-soft); color: var(--fg); border-color: var(--line); font-weight: 700; }
+.stepnav { display: flex; gap: 8px; }
+.stepnav button { flex: 1; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; padding: 7px; cursor: pointer; min-height: 38px; }
+.stepnav button.primary { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.steptext { font-size: 14px; }
+.info h3 { font-size: 17px; }
+.info .en { font-size: 12px; color: var(--muted); }
+.info .clin { font-size: 13px; background: var(--accent-soft); border-radius: 8px; padding: 8px 10px; }
+.hint { font-size: 13px; color: var(--muted); }
+
+.pc { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; }
+.pc ul { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.pc h3.good { color: var(--good); }
+.pc h3.bad { color: var(--bad); }
+.sect { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 860px; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+thead th { font-family: var(--font-display); font-size: 14px; border-bottom: 2px solid var(--accent); }
+tbody th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+tbody tr:hover { background: var(--accent-soft); }
+.todo { color: var(--muted); font-style: italic; }
+.src { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.note { font-size: 13px; color: var(--muted); max-width: 78ch; }
+.review { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>乳房重建 3D 圖譜</h1>
+      <p class="sub">用 3D 解剖模型看懂不同的乳癌手術與重建方式。拖曳旋轉、滾輪縮放,點選任何結構可看說明。</p>
+    </div>
+    <span class="badge">v0.3 草稿・待醫師審核</span>
+  </div>
+
+  <nav class="tabs" id="tabs" aria-label="選擇手術情境"></nav>
+
+  <div class="main">
+    <div class="stagebox">
+      <canvas id="stage" aria-label="3D 解剖模型"></canvas>
+      <div class="overlay ov-top">
+        <div class="ctlgroup" role="group" aria-label="視角" id="views"></div>
+        <div class="ctlgroup" role="group" aria-label="模式">
+          <button class="ctl" id="m-single" aria-pressed="true">步驟</button>
+          <button class="ctl" id="m-compare" aria-pressed="false">並排比較</button>
+        </div>
+      </div>
+      <div class="cmplabels" id="cmplabels" hidden><span id="cmpA"></span><span id="cmpB"></span></div>
+      <div class="cmpbar" id="cmpbar" hidden>
+        <select id="selA" aria-label="左側情境"></select>
+        <select id="selB" aria-label="右側情境"></select>
+      </div>
+      <div class="peel">
+        <label for="peel">剝開到 <b id="peelName">皮膚</b></label>
+        <input id="peel" type="range" min="0" max="4" step="1" value="0">
+        <div class="ticks"><span>皮膚</span><span>脂肪</span><span>乳腺</span><span>肌肉</span><span>骨骼</span></div>
+      </div>
+      <div class="callout" id="callout" hidden></div>
+      <div class="loading" id="loading">載入解剖模型中…</div>
+    </div>
+
+    <aside class="side">
+      <section class="panel" id="stepPanel">
+        <span class="eyebrow" id="scnTag"></span>
+        <h2 id="scnName"></h2>
+        <p class="hint" id="scnOne"></p>
+        <ol class="steps" id="steps"></ol>
+        <p class="steptext" id="stepText"></p>
+        <div class="stepnav">
+          <button id="prev">上一步</button>
+          <button id="next" class="primary">下一步</button>
+        </div>
+      </section>
+      <section class="panel info" id="info">
+        <span class="eyebrow">結構說明</span>
+        <h3 id="infoName">點選模型上的結構</h3>
+        <span class="en" id="infoEn"></span>
+        <p id="infoText" class="hint">例如點肌肉、肋骨、血管或乳腺,這裡會顯示白話說明與臨床重點。</p>
+        <p class="clin" id="infoClin" hidden></p>
+      </section>
+    </aside>
+  </div>
+
+  <section class="sect">
+    <h2 id="pcTitle">優點與限制</h2>
+    <div class="pc">
+      <div><h3 class="good">優點</h3><ul id="pros"></ul></div>
+      <div><h3 class="bad">限制與風險</h3><ul id="cons"></ul></div>
+      <div><h3>較適合的情況</h3><ul id="fit"></ul></div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <h2>重建方式對照</h2>
+    <div class="tablewrap"><table id="cmpTable"></table></div>
+    <p class="note">發生率、住院天數與健保或自費項目尚未填入,請審核醫師依院內資料補上。</p>
+  </section>
+
+  <section class="sect">
+    <h2>模型來源、授權與參考資料</h2>
+    <p class="note">骨骼、肌肉、大網膜與血管路徑取自 Z-Anatomy(源自 BodyParts3D),已減面並轉為網頁格式。原始模型為成年男性,乳房、乳腺、皮下脂肪、腫瘤、皮瓣與假體為依解剖位置另行建模的示意。本頁的 3D 模型依 CC BY-SA 4.0 授權釋出。</p>
+    <ul class="src">
+      <li>Z-Anatomy, The libre 3D atlas of anatomy, <a href="https://github.com/Z-Anatomy/Models-of-human-anatomy">CC BY-SA 4.0</a></li>
+      <li>BodyParts3D, © The Database Center for Life Science, <a href="https://dbarchive.biosciencedbc.jp/en/bodyparts3d/download.html">原始資料</a>(Mitsuhashi et al., Nucleic Acids Res 2009)</li>
+      <li>保留乳房手術:<a href="https://www.cancer.org/cancer/breast-cancer/treatment/surgery-for-breast-cancer/breast-conserving-surgery-lumpectomy.html">American Cancer Society</a>、<a href="https://www.moffitt.org/endeavor/archive/lumpectomy-vs-mastectomy/">Moffitt</a></li>
+      <li>背闊肌局部重建:<a href="https://doaj.org/article/e82a91c95d0a4cfd9176c50c6a45ce6f">Plast Reconstr Surg Glob Open 2024</a></li>
+      <li>大網膜皮瓣:<a href="https://link.springer.com/article/10.1245/s10434-014-3907-z">Ann Surg Oncol 2014</a>、<a href="https://jcancer.org/v9p1782.htm">J Cancer 2018 系統性回顧</a></li>
+      <li>TRAM 與 DIEP:<a href="https://mayoclinic.org/tests-procedures/breast-reconstruction-flap/multimedia/pedicle-tram-flap/img-20005834">Mayo Clinic</a>、<a href="https://e-aaps.org/journal/view.php?number=631">Arch Aesthetic Plast Surg</a></li>
+      <li>假體重建:<a href="https://www.mayoclinic.org/what-you-can-expect/rec-20271742">Mayo Clinic</a>、<a href="https://www.breastcancer.org/treatment/surgery/breast-reconstruction/tissue-expanders">Breastcancer.org</a></li>
+    </ul>
+    <div class="review">
+      <span>審核醫師:__________</span>
+      <span>版本:v0.3 草稿</span>
+      <span>審核日期:__________</span>
+    </div>
+    <p class="note">本頁為衛教用示意,不是個人治療建議,也不代表手術後的實際外觀。實際選擇請依主治醫師評估。</p>
+  </section>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
