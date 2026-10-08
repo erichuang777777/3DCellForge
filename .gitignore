@@ -32,3 +32,4 @@ bio-demo-*.png
 *.njsproj
 *.sln
 *.sw?
+__pycache__/
