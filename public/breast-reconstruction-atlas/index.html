@@ -119,6 +119,42 @@ tbody tr:hover { background: var(--accent-soft); }
 .src { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 .note { font-size: 13px; color: var(--muted); max-width: 78ch; }
 .review { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+.sim .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.sim .lbl { font-size: 13px; color: var(--muted); }
+#clock { width: 100%; max-width: 280px; align-self: center; cursor: crosshair; touch-action: manipulation; }
+#clock .rim { fill: var(--accent-soft); stroke: var(--ink); stroke-width: 1.2; }
+#clock .are { fill: #c98a7c; opacity: .55; }
+#clock .num { font-size: 11px; fill: var(--muted); text-anchor: middle; dominant-baseline: middle; font-family: var(--font-body); }
+#clock .side { font-size: 11px; fill: var(--teal); font-weight: 700; text-anchor: middle; font-family: var(--font-body); }
+#clock .tum { fill: #6b4467; }
+#clock .exc { fill: none; stroke: #3f9c7a; stroke-width: 1.4; stroke-dasharray: 4 3; }
+#clock .inc { fill: none; stroke: #b0302a; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#clock .tick { stroke: var(--line); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+.grid2 label { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); min-width: 0; }
+.grid2 input, .grid2 select { font: inherit; font-size: 15px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-height: 38px; width: 100%; }
+.result { background: var(--bg); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.result .nums { display: flex; flex-wrap: wrap; gap: 6px 14px; font-variant-numeric: tabular-nums; }
+.result .nums b { font-size: 17px; color: var(--fg); }
+.result .nums span { color: var(--muted); font-size: 12px; display: flex; flex-direction: column; }
+.lv { display: inline-block; border-radius: 6px; padding: 2px 8px; font-weight: 700; font-size: 13px; }
+.lv1 { background: #dcefe0; color: #24603a; } .lv2 { background: var(--warn-bg); color: var(--warn-fg); } .lv3 { background: var(--accent-soft); color: var(--accent); }
+.result ul { margin: 0; padding-left: 1.1em; font-size: 13px; color: var(--muted); }
+.incisions { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 10px; margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.incisions legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
+.incisions h4 { margin: 6px 0 2px; font-size: 12px; color: var(--accent); letter-spacing: .04em; }
+.incisions label { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; padding: 3px 4px; border-radius: 6px; cursor: pointer; }
+.incisions label:hover { background: var(--accent-soft); }
+.incisions input { margin-top: 4px; accent-color: var(--accent); }
+.incisions .star { color: var(--accent); font-weight: 700; }
+.incisions small { color: var(--muted); }
+.incdesc { font-size: 13px; color: var(--muted); background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+.chk { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+details.doc { font-size: 13px; color: var(--muted); }
+details.doc summary { cursor: pointer; }
+details.doc .grid2 { margin-top: 8px; }
+.tab.simtab { border-style: dashed; border-color: var(--accent); color: var(--accent); }
+.tab.simtab[aria-pressed="true"] { border-style: solid; color: var(--surface); }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>
 </head>
@@ -129,7 +165,7 @@ tbody tr:hover { background: var(--accent-soft); }
       <h1>乳房重建 3D 圖譜</h1>
       <p class="sub">用 3D 解剖模型看懂不同的乳癌手術與重建方式。拖曳旋轉、滾輪縮放,點選任何結構可看說明。</p>
     </div>
-    <span class="badge">v0.3 草稿・待醫師審核</span>
+    <span class="badge">v0.4 草稿・待醫師審核</span>
   </div>
 
   <nav class="tabs" id="tabs" aria-label="選擇手術情境"></nav>
@@ -159,6 +195,48 @@ tbody tr:hover { background: var(--accent-soft); }
     </div>
 
     <aside class="side">
+      <section class="panel sim" id="simPanel" hidden>
+        <span class="eyebrow">個人化模擬</span>
+        <h2>模擬我的腫瘤</h2>
+        <p class="hint">依影像或病理報告輸入。位置以「面對病人」的鐘面表示,也可以直接點下方圖。</p>
+        <div class="row">
+          <span class="lbl">側別</span>
+          <div class="ctlgroup" role="group" aria-label="側別" id="simSide">
+            <button class="ctl" data-side="L" aria-pressed="true">左乳</button>
+            <button class="ctl" data-side="R" aria-pressed="false">右乳</button>
+          </div>
+        </div>
+        <svg id="clock" viewBox="-118 -118 236 236" role="img" aria-label="乳房鐘面位置圖"></svg>
+        <div class="grid2">
+          <label for="simHour">鐘點<select id="simHour"></select></label>
+          <label for="simDist">距乳頭(cm)<input id="simDist" type="number" min="0" max="12" step="0.5" inputmode="decimal"></label>
+          <label for="simSize">腫瘤大小(cm)<input id="simSize" type="number" min="0.3" max="10" step="0.1" inputmode="decimal"></label>
+          <label for="simCup">乳房大小<select id="simCup">
+            <option value="A">A 罩杯</option><option value="B">B 罩杯</option><option value="C">C 罩杯</option><option value="D">D 罩杯</option><option value="E">E 罩杯以上</option><option value="custom">自行輸入體積</option>
+          </select></label>
+          <label for="simMl" id="simMlWrap" hidden>乳房體積(mL)<input id="simMl" type="number" min="100" max="2000" step="10" inputmode="numeric"></label>
+        </div>
+        <div class="result" id="simResult" aria-live="polite"></div>
+        <div class="row">
+          <span class="lbl">檢視</span>
+          <div class="ctlgroup" role="group" aria-label="檢視" id="simViews">
+            <button class="ctl" data-view="pre" aria-pressed="true">術前規劃</button>
+            <button class="ctl" data-view="post" aria-pressed="false">單純切除後</button>
+            <button class="ctl" data-view="onco" aria-pressed="false">腫瘤整形後</button>
+          </div>
+        </div>
+        <label class="chk" id="simSymWrap"><input type="checkbox" id="simSym"> 對側一起做對稱手術</label>
+        <fieldset class="incisions" id="simInc"><legend>刀口選擇 <small>★ 為依位置建議</small></legend></fieldset>
+        <details class="doc">
+          <summary>醫師設定</summary>
+          <div class="grid2">
+            <label for="cfgMargin">安全邊界(cm)<input id="cfgMargin" type="number" min="0" max="3" step="0.1"></label>
+            <label for="cfgL1">Level I 上限(%)<input id="cfgL1" type="number" min="5" max="60" step="1"></label>
+            <label for="cfgL2">Level II 上限(%)<input id="cfgL2" type="number" min="10" max="90" step="1"></label>
+          </div>
+          <p class="hint">罩杯體積對照與刀口規則在 oncoplasty.js。</p>
+        </details>
+      </section>
       <section class="panel" id="stepPanel">
         <span class="eyebrow" id="scnTag"></span>
         <h2 id="scnName"></h2>
@@ -180,7 +258,7 @@ tbody tr:hover { background: var(--accent-soft); }
     </aside>
   </div>
 
-  <section class="sect">
+  <section class="sect" id="pcSect">
     <h2 id="pcTitle">優點與限制</h2>
     <div class="pc">
       <div><h3 class="good">優點</h3><ul id="pros"></ul></div>
@@ -209,7 +287,7 @@ tbody tr:hover { background: var(--accent-soft); }
     </ul>
     <div class="review">
       <span>審核醫師:__________</span>
-      <span>版本:v0.3 草稿</span>
+      <span>版本:v0.4 草稿</span>
       <span>審核日期:__________</span>
     </div>
     <p class="note">本頁為衛教用示意,不是個人治療建議,也不代表手術後的實際外觀。實際選擇請依主治醫師評估。</p>
