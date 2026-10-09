@@ -49,6 +49,8 @@ for s in LR:
     add(f'addlong_{s}',[f'Adductor longus.{s}'],1000,'muscle')
     add(f'intobl_{s}',[f'Internal abdominal oblique muscle.{s}'],2500,'muscle')
 add('sternum',['Manubrium of sternum','Body of sternum','Xiphoid process'],1500,'bone')
+for out,src in [('nodes_I_ant','Anterior axillary nodes.r'),('nodes_I_post','Posterior axillary nodes.r'),('nodes_I_lat','Lateral axillary nodes.r'),('nodes_II_cent','Central axillary nodes.r'),('nodes_II_inter','Interpectoral nodes.r'),('nodes_III_apical','Apical axillary nodes.r'),('nodes_imn','Parasternal nodes.r')]:
+    add(out,[src],1200,'node')
 add('spine',[f'Vertebra T{i}' for i in range(1,13)]+[f'Vertebra L{i}' for i in range(1,6)]+['Sacrum'],5000,'bone')
 add('linea_alba',['Linea alba'],200,'fascia')
 add('omentum',['Greater omentum'],1800,'omentum')
@@ -105,7 +107,7 @@ bpy.context.view_layer.objects.active=coll.objects[0]
 bpy.ops.export_scene.gltf(filepath=OUT+'chest.glb', use_selection=True, export_apply=True, export_yup=True, export_normals=True, export_materials='NONE', export_texcoords=False, export_draco_mesh_compression_enable=False)
 # curves
 curves={}
-want=['Superior gluteal artery','Inferior gluteal artery','Lateral circumflex femoral artery','Medial circumflex femoral artery','Deep femoral artery','Perforating femoral arteries','Femoral artery','Posterior intercostal arteries','Musculophrenic artery','Lumbar arteries','External iliac artery','Internal thoracic artery','Internal thoracic veins','Superior epigastric artery','Superior epigastric veins','Inferior epigastric artery','Inferior epigastric vein','Thoracodorsal artery','Thoracodorsal vein','Thoracodorsal nerve','Subscapular artery','Lateral thoracic artery','Superficial epigastric artery']
+want=['Axillary artery','Axillary vein','Long thoracic nerve','Medial pectoral nerve','Lateral pectoral nerve','Cephalic vein','Superior gluteal artery','Inferior gluteal artery','Lateral circumflex femoral artery','Medial circumflex femoral artery','Deep femoral artery','Perforating femoral arteries','Femoral artery','Posterior intercostal arteries','Musculophrenic artery','Lumbar arteries','External iliac artery','Internal thoracic artery','Internal thoracic veins','Superior epigastric artery','Superior epigastric veins','Inferior epigastric artery','Inferior epigastric vein','Thoracodorsal artery','Thoracodorsal vein','Thoracodorsal nerve','Subscapular artery','Lateral thoracic artery','Superficial epigastric artery']
 names=[f'{w}.{s}' for w in want for s in LR]+['Right gastro-omental vein','Left gastro-omental vein','Descending branch of lateral circumflex femoral artery','Descending branch of lateral circumflex femoral artery.l']
 for n in names:
     o=objs.get(n)

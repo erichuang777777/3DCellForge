@@ -282,7 +282,31 @@ const SYMM = {
   meta: { src: '對側乳房', muscle: '否', vessel: '—', mode: '縮乳、提乳或隆乳', scar: '對側乳房', risk: '健側也有手術風險' }
 };
 
-export const EXTRA_SCENARIOS = [MAST_TYPES, IMPLANT_PLANES, FAT_GRAFT, NIPPLE, SYMM, ...TECHS.map(techScenario)];
+
+const AX_SMALL = (dashed) => ({ pts: [[-0.146, 1.305, 0.05], [-0.152, 1.3, 0.036], [-0.157, 1.296, 0.022]], axis: [0, 0], n: [-0.8, 0, 0.5], dashed });
+const AX_LONG = { pts: [[-0.138, 1.312, 0.062], [-0.148, 1.302, 0.044], [-0.156, 1.296, 0.026], [-0.162, 1.29, 0.006], [-0.165, 1.284, -0.012]], axis: [0, 0], n: [-0.9, 0, 0.3] };
+const injRing = { side: 'R', dashed: true, closed: true, pts: Array.from({ length: 13 }, (_, i) => { const t = (i / 12) * Math.PI * 2; return [r4(0.022 * Math.sin(t)), r4(0.022 * Math.cos(t))]; }) };
+const AXILLA = {
+  id: 'axilla', cat: 'surgery', tag: '手術方式', name: '前哨淋巴結切片與腋下淋巴結廓清', short: '前哨與廓清',
+  one: '乳癌最常先轉移到腋下淋巴結。前哨淋巴結切片只取最先接收淋巴的 1 到 3 顆;廓清則切除 Level I、II 的淋巴結。',
+  steps: [
+    { title: '腋下淋巴結分區', cam: 'axilla', peel: 3, text: '以胸小肌(高亮)為界:外側為 Level I(綠),後方為 Level II(橙),內上方鎖骨下為 Level III(紅);胸骨旁為內乳淋巴結(紫)。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostMus: 0.3, nodes: 1, hi: ['pecmin'] } },
+    { title: '注射追蹤劑', cam: 'oblique', text: '在乳暈周圍注射放射性同位素、藍染劑或螢光劑(ICG)。追蹤劑沿淋巴管流到第一站,也就是前哨淋巴結(藍色)。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostSkin: 0.5, nodes: 1, dye: 1, custom: [injRing] }, dur: 3200 },
+    { title: '找到前哨淋巴結', cam: 'axilla', text: '在腋下皮膚皺褶處切一個 2 到 3 公分的小切口(虛線),用 γ 探頭偵測放射性,並找出被染色或發螢光的淋巴結。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostSkin: 0.4, nodes: 1, dye: 1, probe: 1, hiNode: 'sentinel', wscars: [AX_SMALL(true)] } },
+    { title: '取出前哨淋巴結', cam: 'axilla', peel: 3, text: '通常取出 1 到 3 顆淋巴結送病理檢查。沒有轉移時,一般就不需要再清除腋下淋巴結。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostMus: 0.3, nodes: 1, dye: 1, slnGone: 1, wscars: [AX_SMALL(false)] } },
+    { title: '前哨切片術後', cam: 'axilla', text: '只留下腋下小疤痕。手臂淋巴水腫的風險遠低於廓清,但仍可能有腋下或上臂內側麻木。部分低風險病人可依最新研究與醫師討論是否省略切片。', state: { nodes: 0, slnGone: 1, wscars: [AX_SMALL(false)] } },
+    { title: '腋下淋巴結廓清範圍', cam: 'axilla', peel: 3, text: '淋巴結已確認轉移、或特定情況下,會清除 Level I 與 II 的淋巴結與周圍脂肪(高亮);Level III 只有在受侵犯時才清除。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostMus: 0.3, nodes: 1, hiNode: 'I_II', hi: ['pecmin'] } },
+    { title: '保護重要神經血管', cam: 'axilla', peel: 3, text: '清除時保留腋靜脈(藍)、長胸神經(黃,支配前鋸肌,受傷會造成翼狀肩胛)、胸背神經血管(支配背闊肌)與胸肌神經。上臂內側的感覺神經常被犧牲,術後會麻木。', state: { ghostMus: 0.3, nodes: 1, gI: 1, gII: 1, vessels: ['Axillary vein.r', 'Long thoracic nerve.r', 'Thoracodorsal nerve.r', 'Thoracodorsal artery.r', 'Medial pectoral nerve.r', 'Lateral pectoral nerve.r'], vesselsOnly: ['Axillary vein.r', 'Axillary artery.r', 'Long thoracic nerve.r', 'Thoracodorsal nerve.r', 'Thoracodorsal artery.r'] }, dur: 2200 },
+    { title: '廓清術後與引流管', cam: 'axilla', text: '切口較長,通常放置引流管數天。風險包括手臂淋巴水腫、血清腫、肩膀活動受限與麻木;術後需做手臂復健運動。', state: { nodes: 0, gI: 1, gII: 1, drain: 1, wscars: [AX_LONG] } },
+    { title: '新輔助治療後:標記淋巴結', cam: 'axilla', peel: 3, text: '化療前在已證實轉移的淋巴結放置標記夾(銀色)。化療後手術時,同時取出標記的淋巴結與前哨淋巴結(標靶式腋下手術),以判斷是否還需廓清。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostMus: 0.3, nodes: 1, clip: 1, hiNode: 'clip' } }
+  ],
+  pros: ['前哨切片:傷口小、淋巴水腫風險低', '廓清:控制腋下病灶、提供完整分期資訊'],
+  cons: ['廓清:手臂淋巴水腫、血清腫、肩膀活動受限、上臂內側麻木', '前哨切片:少數會偽陰性,或需二次手術'],
+  fit: ['前哨切片:臨床上腋下淋巴結看起來正常', '廓清:淋巴結已確認轉移且符合廓清條件', '新輔助治療後:依治療前後狀況選擇方式'],
+  meta: { src: '腋下淋巴結', muscle: '否', vessel: '保留腋靜脈與神經', mode: '前哨切片或廓清', scar: '腋下', risk: '淋巴水腫、麻木' }
+};
+
+export const EXTRA_SCENARIOS = [AXILLA, MAST_TYPES, IMPLANT_PLANES, FAT_GRAFT, NIPPLE, SYMM, ...TECHS.map(techScenario)];
 
 // 模擬器 Level III:依位置推薦的部分重建術式
 export const ZONE_L3 = {

@@ -147,9 +147,26 @@ const PAL = {
   cavity: ['#b04a3e', '#5a1a14'], scar: '#7c2219', design: '#1f6a6f'
 };
 
+// ---------- 腋下淋巴結 ----------
+const NODE_COL = { I: ['#9ccc65', '#4e7a2a'], II: ['#f0a848', '#8a5a16'], III: ['#d9604a', '#7a2416'], IMN: ['#a59be6', '#4a3f8a'] };
+function nodeLevel(name) { return name.startsWith('nodes_III') ? 'III' : name.startsWith('nodes_II') ? 'II' : name.startsWith('nodes_I') ? 'I' : 'IMN'; }
+// 把一個含多顆淋巴結的網格拆成各自獨立的淋巴結
+function splitComponents(geom) {
+  const idx = geom.index.array; const n = geom.attributes.position.count; const parent = Int32Array.from({ length: n }, (_, i) => i);
+  const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  for (let t = 0; t < idx.length; t += 3) { const a = find(idx[t]), b = find(idx[t + 1]), c = find(idx[t + 2]); parent[b] = a; parent[find(c)] = a; }
+  // 位置相同的頂點也合併(glTF 會在法線接縫處拆頂點)
+  const pos = geom.attributes.position; const key = new Map();
+  for (let i = 0; i < n; i++) { const k = `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`; if (key.has(k)) { const a = find(key.get(k)), b = find(i); parent[b] = a; } else key.set(k, i); }
+  const groups = new Map();
+  for (let t = 0; t < idx.length; t += 3) { const r = find(idx[t]); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(idx[t], idx[t + 1], idx[t + 2]); }
+  return [...groups.values()].filter((g) => g.length >= 24).map((tris) => { const g = geom.clone(); g.setIndex(tris); g.computeBoundingSphere(); return g; });
+}
+
 // ---------- 解剖分層 ----------
 const SUPERFICIAL = ['pecmaj', 'serratus', 'lat_', 'rectus', 'extobl', 'deltoid', 'teres', 'linea_alba', 'glutmax', 'gracilis', 'vastlat', 'rectfem', 'sartorius', 'tfl', 'addlong'];
 function layerOf(name) {
+  if (name.startsWith('nodes_')) return 9;
   if (name === 'skin') return 0;
   if (name.startsWith('fat')) return 1;
   if (name.startsWith('gland')) return 2;
@@ -177,6 +194,7 @@ function fiberFor(name) {
 }
 function materialFor(name) {
   if (name === 'skin') return atlasMat('skin', ...PAL.skin, { side: THREE.DoubleSide });
+  if (name.startsWith('nodes_')) { const c = NODE_COL[nodeLevel(name)]; return atlasMat('plain', c[0], c[1]); }
   if (/^(pecmaj|pecmin|serratus|lat_|rectus|extobl|intobl|deltoid|teres|intercostal|glutmax|gracilis|vastlat|rectfem|sartorius|tfl|addlong)/.test(name)) return atlasMat('muscle', ...PAL.muscle, { fiber: fiberFor(name) });
   if (name === 'linea_alba') return atlasMat('plain', ...PAL.tendon);
   if (name.startsWith('cart')) return atlasMat('bone', ...PAL.cart);
@@ -212,6 +230,7 @@ const CAMS = {
   thighBack: { t: [-0.07, 0.78, -0.05], p: [-0.3, 0.88, -0.95] },
   lateral: { t: [-0.12, 1.2, 0.0], p: [-0.95, 1.25, 0.25] },
   backLat: { t: [-0.12, 1.2, -0.05], p: [-0.8, 1.3, -0.6] },
+  axilla: { t: [-0.125, 1.315, 0.005], p: [-0.37, 1.25, 0.31] },
   glandZoom: { t: [-0.1, 1.245, 0.13], p: [-0.21, 1.275, 0.42] },
   simL: { t: [0.085, 1.24, 0.1], p: [0.2, 1.29, 0.78] },
   simR: { t: [-0.085, 1.24, 0.1], p: [-0.2, 1.29, 0.78] }
@@ -492,9 +511,80 @@ function createInstance() {
   const drape = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), atlasMat('plain', '#c9d6dc', '#7d8f98', { hatch: 0 }));
   drape.position.set(0, 0.805, 0.012); drape.scale.set(0.04, 0.062, 0.06); drape.name = 'drape'; drape.userData.info = 'drape'; inst.root.add(drape);
   computeTargets(inst);
+  buildAxilla(inst);
   buildGlandDetail(inst);
   buildFatDrops(inst);
   return inst;
+}
+
+// ---------- 前哨淋巴結與廓清 ----------
+function buildAxilla(inst) {
+  // 原始資料在胸小肌內上方(鎖骨下)沒有淋巴結,補 3 顆示意的 Level III
+  [[-0.088, 1.378, 0.026], [-0.096, 1.386, 0.018], [-0.08, 1.383, 0.034]].forEach((p, k) => {
+    const g = new THREE.SphereGeometry(0.0019, 14, 10); g.translate(...p);
+    const m = new THREE.Mesh(g, atlasMat('plain', ...NODE_COL.III)); m.name = 'nodes_III_proc#' + k; m.userData.info = 'nodes_III_apical'; m.userData.layer = 9;
+    const o = new THREE.Mesh(g, outlineMat); o.raycast = () => {}; m.add(o); m.userData.outline = o; inst.root.add(m); inst.parts.push(m);
+  });
+  inst.nodes = inst.parts.filter((m) => m.name.startsWith('nodes_'));
+  // 依胸小肌位置分級:外側 Level I、後方 Level II、內上方 Level III
+  const pm = inst.byName.get('pecmin_r'); const bins = [];
+  if (pm) {
+    const pp = pm.geometry.attributes.position;
+    for (let i = 0; i < pp.count; i++) { const y = pp.getY(i), x = pp.getX(i); const b = Math.round(y * 100); const e = bins[b] || (bins[b] = [x, x]); e[0] = Math.min(e[0], x); e[1] = Math.max(e[1], x); }
+  }
+  const ys = Object.keys(bins).map(Number);
+  const border = (y) => { if (!ys.length) return [-0.13, -0.07]; let b = Math.round(y * 100); b = Math.min(Math.max(b, Math.min(...ys)), Math.max(...ys)); while (!bins[b] && b > 0) b--; return bins[b] || [-0.13, -0.07]; };
+  for (const m of inst.nodes) {
+    m.geometry.computeBoundingSphere(); m.userData.c = m.geometry.boundingSphere.center.clone();
+    let lv = nodeLevel(m.name);
+    if (lv !== 'IMN' && !m.name.includes('_proc')) { const [lat, med] = border(m.userData.c.y); const x = m.userData.c.x; const y = m.userData.c.y; lv = (y > 1.372 && x > lat - 0.025) || (x > med + 0.004 && y > 1.355) ? 'III' : x < lat - 0.004 ? 'I' : 'II'; }
+    m.userData.level = lv; const col = NODE_COL[lv]; m.material.uniforms.uColor.value.set(col[0]); m.material.uniforms.uShade.value.set(col[1]);
+    const k = 1.8; m.scale.setScalar(k); m.position.copy(m.userData.c).multiplyScalar(1 - k); // 以淋巴結中心放大,方便辨識
+    m.material.depthTest = false; m.renderOrder = 8; m.material.userData.alwaysTransparent = true;
+  }
+  const target = new THREE.Vector3(-0.115, 1.29, 0.06);
+  const ant = inst.nodes.filter((m) => m.userData.level === 'I');
+  inst.sentinel = ant.reduce((b, m) => (!b || m.userData.c.distanceTo(target) < b.userData.c.distanceTo(target) ? m : b), null);
+  if (inst.sentinel) { inst.sentinel.material = inst.sentinel.material.clone(); inst.sentinel.userData.info = 'sentinel'; }
+  const sc = inst.sentinel ? inst.sentinel.userData.c.clone() : new THREE.Vector3(-0.12, 1.31, 0.03);
+  // 追蹤劑路徑:乳暈周圍 → 外上象限皮下 → 前哨淋巴結
+  const f = inst.regions.R.frame.f; const p0 = regionBasePoint(inst, 'R', 0.02, 0.0).addScaledVector(f, 0.03);
+  const p1 = regionBasePoint(inst, 'R', 0.06, 0.04).addScaledVector(f, 0.012);
+  const curve = new THREE.CatmullRomCurve3([p0, p1, sc.clone().lerp(p1, 0.35), sc]);
+  inst.dyePath = new THREE.Mesh(new THREE.TubeGeometry(curve, 60, 0.0016, 6), atlasMat('plain', '#3466d8', '#1a2f70', { hatch: 0 }));
+  inst.dyePath.name = 'dyepath'; inst.dyePath.userData.info = 'dyepath'; inst.dyePath.material.depthTest = false; inst.dyePath.renderOrder = 9; inst.root.add(inst.dyePath);
+  inst.dyeTotal = inst.dyePath.geometry.index.count;
+  // γ 探頭
+  const probe = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.12, 20), atlasMat('bone', '#cfd5da', '#6b747c'));
+  const dir = new THREE.Vector3(-0.75, -0.1, 0.65).normalize(); probe.position.copy(sc).addScaledVector(dir, 0.085);
+  probe.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir); probe.name = 'probe'; probe.userData.info = 'probe'; inst.root.add(probe); inst.probe = probe;
+  // 引流管
+  const dcurve = new THREE.CatmullRomCurve3([sc.clone(), new THREE.Vector3(-0.155, 1.25, 0.03), new THREE.Vector3(-0.17, 1.2, 0.04), new THREE.Vector3(-0.2, 1.17, 0.07)]);
+  inst.drain = new THREE.Mesh(new THREE.TubeGeometry(dcurve, 40, 0.0025, 8), atlasMat('implant', '#e7eef2', '#8aa0ad', { transparent: true }));
+  inst.drain.name = 'drain'; inst.drain.userData.info = 'drain'; inst.root.add(inst.drain);
+  // 標記夾:放在另一顆 Level I 淋巴結
+  const other = ant.filter((m) => m !== inst.sentinel).sort((a, b) => a.userData.c.distanceTo(target) - b.userData.c.distanceTo(target))[0] || inst.sentinel;
+  inst.clip = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.0015, 0.0015), atlasMat('bone', '#e9edf0', '#7d8790'));
+  inst.clip.position.copy(other ? other.userData.c : sc); inst.clip.name = 'clip'; inst.clip.userData.info = 'clip'; inst.clip.material.depthTest = false; inst.clip.renderOrder = 10; inst.root.add(inst.clip);
+  inst.clipNode = other;
+}
+function updateAxilla(inst, s) {
+  for (const m of inst.nodes) {
+    const lv = m.userData.level;
+    let op = s.nodes;
+    if (lv === 'I') op *= 1 - s.gI; if (lv === 'II') op *= 1 - s.gII;
+    if (m === inst.sentinel) op *= 1 - s.slnGone;
+    if (m === inst.clipNode && s.clip > 0.01) op = Math.max(op, s.nodes);
+    setOpacity(m, op);
+    const hi = s.hiNode === 'I_II' ? (lv === 'I' || lv === 'II') : s.hiNode === 'sentinel' ? m === inst.sentinel : s.hiNode === 'clip' ? m === inst.clipNode : false;
+    m.material.uniforms.uHi.value = hi ? 1 : 0;
+  }
+  if (inst.sentinel) { const c = new THREE.Color(NODE_COL.I[0]).lerp(new THREE.Color('#2f63d6'), s.dye); inst.sentinel.material.uniforms.uColor.value.copy(c); inst.sentinel.material.uniforms.uShade.value.copy(new THREE.Color(NODE_COL.I[1]).lerp(new THREE.Color('#13285e'), s.dye)); }
+  inst.dyePath.visible = s.dye > 0.01 && s.slnGone < 0.5;
+  if (inst.dyePath.visible) { inst.dyePath.geometry.setDrawRange(0, Math.floor((inst.dyeTotal * Math.min(s.dye, 1)) / 3) * 3); inst.dyePath.material.uniforms.uOpacity.value = 0.9; inst.dyePath.material.transparent = true; }
+  setOpacity(inst.probe, s.probe);
+  inst.drain.material.userData.alwaysTransparent = true; setOpacity(inst.drain, s.drain * 0.9);
+  inst.clip.visible = s.clip > 0.01; inst.clip.scale.setScalar(1 + 0.2 * Math.sin(TIME.value * 4));
 }
 
 // ---------- 術式庫通用皮瓣 ----------
@@ -696,7 +786,8 @@ const BASE_STATE = {
   flap: { kind: null, t: 0, vis: 0 }, imp: { kind: null, fill: 0, vis: 0 }, anast: 0,
   tumorAt: null, custom: [], keepGland: false, xray: false,
   aug: { plane: null, fill: 0, vis: 0, shapeR: 'round', shapeL: 'round' }, glandShell: 1, glandDetail: 0, hiGland: '', density: 1.5, fatOp: null, lymph: 0,
-  gf: { tech: null, t: 0, vis: 0 }, wscars: [], woundAt: null, perfAt: null, paddleR: null, fatg: 0
+  gf: { tech: null, t: 0, vis: 0 }, wscars: [], woundAt: null, perfAt: null, paddleR: null, fatg: 0,
+  nodes: 0, dye: 0, slnGone: 0, gI: 0, gII: 0, probe: 0, drain: 0, clip: 0, hiNode: '', vesselsOnly: []
 };
 function merge(a, b) {
   if (b === undefined) return structuredClone(a);
@@ -798,7 +889,7 @@ function applyState(inst, s, tweening = false) {
     if (m.material.uniforms) m.material.uniforms.uHi.value = s.hi.some((h) => m.name.startsWith(h)) ? 1 : 0;
   }
   const deep = peel >= 1.5 || s.ghostSkin < 0.9 || s.ghostMus < 0.9;
-  for (const [name, obj] of inst.byName) if (obj.userData.vessel) { obj.userData.mat.uniforms.uHi.value = s.vessels.includes(name) ? 1 : 0; obj.visible = deep; }
+  for (const [name, obj] of inst.byName) if (obj.userData.vessel) { obj.userData.mat.uniforms.uHi.value = s.vessels.includes(name) ? 1 : 0; obj.visible = deep && (!s.vesselsOnly.length || s.vesselsOnly.includes(name)); }
   // 乳暈、皮島、傷口
   const mu = inst.skin.material.uniforms;
   const nR = inst.nipple?.R, nL = inst.nipple?.L;
@@ -876,6 +967,7 @@ function applyState(inst, s, tweening = false) {
   }
   updateGlandDetail(inst, s);
   updateGenericFlap(inst, s);
+  updateAxilla(inst, s);
   // 穿通枝標記
   if (s.perfAt) { inst.perf.position.set(...s.perfAt); inst.perf.scale.setScalar(1 + 0.3 * Math.sin(TIME.value * 4)); setOpacity(inst.perf, 1); inst.perf.material.userData.alwaysTransparent = true; } else setOpacity(inst.perf, 0);
   // 脂肪滴
@@ -1346,6 +1438,10 @@ async function boot() {
   });
   const skin = meshes.find((m) => m.name === 'skin');
   if (skin) flattenMaleNipples(skin.geometry);
+  for (const m of meshes.filter((x) => x.name.startsWith('nodes_'))) {
+    meshes.splice(meshes.indexOf(m), 1);
+    splitComponents(m.geometry).forEach((g, k) => meshes.push({ name: `${m.name}#${k}`, geometry: g }));
+  }
   BASE = { meshes, curves: meta.curves };
   instances.push(createInstance(), createInstance());
   ui.loading.hidden = true;
