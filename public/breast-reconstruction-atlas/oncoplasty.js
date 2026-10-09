@@ -17,13 +17,13 @@ export const CONFIG = {
 };
 
 export const ZONES = {
-  central: { zh: '中央(乳頭乳暈附近)', l2: ['round_block'] },
+  central: { zh: '中央(乳頭乳暈附近)', l2: ['round_block', 'grisotti'] },
   up: { zh: '正上方', l2: ['inferior_pedicle', 'omega'] },
-  up_lat: { zh: '外上方', l2: ['round_block', 'lateral_mp'] },
+  up_lat: { zh: '外上方', l2: ['round_block', 'lateral_mp', 'b_plasty'] },
   lat: { zh: '外側', l2: ['lateral_mp'] },
-  low_lat: { zh: '外下方', l2: ['j_plasty', 'l_plasty'] },
-  low: { zh: '正下方', l2: ['vertical', 'imf_plasty', 'inverted_t'] },
-  low_med: { zh: '內下方', l2: ['vertical', 'inverted_t'] },
+  low_lat: { zh: '外下方', l2: ['j_plasty', 'l_plasty', 'superior_pedicle'] },
+  low: { zh: '正下方', l2: ['vertical', 'imf_plasty', 'inverted_t', 'superior_pedicle'] },
+  low_med: { zh: '內下方', l2: ['vertical', 'inverted_t', 'v_mammoplasty', 'medial_pedicle'] },
   med: { zh: '內側', l2: ['medial_mp'] },
   up_med: { zh: '內上方', l2: ['omega', 'medial_mp'] }
 };
@@ -46,7 +46,12 @@ export const INCISIONS = {
   l_plasty: { level: 2, zh: 'L 形整形', en: 'L-plasty', text: '乳暈環形加垂直向下,再沿下緣向外的切口,用於外下方腫瘤。' },
   vertical: { level: 2, zh: '垂直乳房整形', en: 'Vertical mammaplasty', text: '乳暈環形加垂直向下的切口,用於下方腫瘤。' },
   imf_plasty: { level: 2, zh: '下皺褶整形', en: 'Inframammary fold plasty', text: '沿乳房下緣切除並上推組織,用於非常靠近下緣的腫瘤。' },
-  inverted_t: { level: 2, zh: '倒 T 乳房整形', en: 'Inverted-T mammaplasty', text: '乳暈環形、垂直與下緣橫向的倒 T 疤痕,適合較大或下垂的乳房。' }
+  inverted_t: { level: 2, zh: '倒 T 乳房整形', en: 'Inverted-T mammaplasty', text: '乳暈環形、垂直與下緣橫向的倒 T 疤痕,適合較大或下垂的乳房。' },
+  grisotti: { level: 2, zh: 'Grisotti 皮瓣', en: 'Grisotti flap', text: '中央腫瘤連同乳頭乳暈切除,用下方帶皮島的乳腺組織往上推補,皮島成為新的乳暈位置。' },
+  b_plasty: { level: 2, zh: 'B 形整形', en: 'B-plasty', text: '乳暈上方到外側的弧形切口加外上延伸,呈 B 形,用於外上方腫瘤。' },
+  v_mammoplasty: { level: 2, zh: 'V 形乳房整形', en: 'V-mammoplasty', text: '以 V 形切除內下方組織後兩側合攏,疤痕偏向內下。' },
+  superior_pedicle: { level: 2, zh: '上蒂縮乳式整形', en: 'Superior pedicle reduction', text: '用縮乳手術的方式切除下方腫瘤,乳頭由上方組織供血並上提,疤痕呈倒 T。適合大乳房。' },
+  medial_pedicle: { level: 2, zh: '內蒂縮乳式整形', en: 'Medial pedicle reduction', text: '乳頭由內側組織供血,切除外下或下方組織,疤痕呈倒 T。適合大乳房。' }
 };
 
 // 鐘點(1–12,可含半點)+ 表面距離(cm)→ facing 座標(公尺)
@@ -149,6 +154,15 @@ export function incisionPaths(id, ctx) {
       return [circle(nac), { pts: [[-Ls * nac * 0.95, 0.002], [-Ls * 0.04, 0.008], [-Ls * 0.06, 0.012]] }];
     case 'vertical':
       return [circle(nac), { pts: [[0, -nac], [0, Yf]] }];
+    case 'grisotti':
+      return [circle(nac), { pts: [[0, -nac], [Ls * 0.008, Yf * 0.6], [Ls * 0.02, Yf + 0.012]] }];
+    case 'b_plasty':
+      return [{ pts: arc(nac, 0, Ls * Math.PI / 2, 12) }, { pts: [[Ls * nac, 0], [Ls * 0.04, 0.028], [Ls * 0.066, 0.022]] }];
+    case 'v_mammoplasty':
+      return [circle(nac), { pts: [[-Ls * nac * 0.7, -nac * 0.7], [-Ls * 0.018, Yf * 0.7], [-Ls * 0.03, Yf]] }];
+    case 'superior_pedicle':
+    case 'medial_pedicle':
+      return [circle(nac), { pts: [[0, -nac], [0, Yf]] }, { pts: arc(0.6, Math.PI - 0.09, Math.PI + 0.09, 12, 0, Yf + 0.6) }];
     case 'j_plasty':
       return [circle(nac), { pts: [[0, -nac], [0, Yf + 0.014], [Ls * 0.012, Yf + 0.005], [Ls * 0.035, Yf + 0.004]] }];
     case 'l_plasty':

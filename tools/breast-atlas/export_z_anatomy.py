@@ -39,6 +39,15 @@ for s in LR:
     add(f'deltoid_{s}',[f'Clavicular part of deltoid muscle.{s}',f'Acromial part of deltoid muscle.{s}',f'Spinal part of deltoid muscle.{s}'],2000,'muscle')
     add(f'teres_{s}',[f'Teres major muscle.{s}'],600,'muscle')
     add(f'intercostal_{s}',[f'External intercostal muscles.{s}'],4000,'muscle')
+    add(f'femur_{s}',[f'Femur.{s}'],1200,'bone')
+    add(f'glutmax_{s}',[f'Gluteus maximus muscle.{s}'],3000,'muscle')
+    add(f'gracilis_{s}',[f'Gracilis muscle.{s}'],1200,'muscle')
+    add(f'vastlat_{s}',[f'Vastus lateralis muscle.{s}'],2500,'muscle')
+    add(f'rectfem_{s}',[f'Rectus femoris muscle.{s}'],1500,'muscle')
+    add(f'sartorius_{s}',[f'Sartorius muscle.{s}'],1200,'muscle')
+    add(f'tfl_{s}',[f'Tensor fasciae latae.{s}'],800,'muscle')
+    add(f'addlong_{s}',[f'Adductor longus.{s}'],1000,'muscle')
+    add(f'intobl_{s}',[f'Internal abdominal oblique muscle.{s}'],2500,'muscle')
 add('sternum',['Manubrium of sternum','Body of sternum','Xiphoid process'],1500,'bone')
 add('spine',[f'Vertebra T{i}' for i in range(1,13)]+[f'Vertebra L{i}' for i in range(1,6)]+['Sacrum'],5000,'bone')
 add('linea_alba',['Linea alba'],200,'fascia')
@@ -47,7 +56,7 @@ add('stomach',['Stomach'],900,'viscera')
 add('colon',['Transverse colon'],500,'viscera')
 add('liver',['Liver'],1500,'viscera')
 
-trunk=['Infraclavicular fossa','Inframammary region','Mammary region','Pectoral region','Presternal region','Deltopectoral triangle','Lateral region of thorax','Epigastric region','Umbilical region','Umbilicus','Hypochondriac region','Hypogastric region','Inguinal region','Lateral region of abdomen','Lumbar region','Sacral region','Infrascapular region','Interscapular region','Scapular region','Triangle of auscultation','Vertebral region','Axillary region','Deltoid region']
+trunk=['Infraclavicular fossa','Inframammary region','Mammary region','Pectoral region','Presternal region','Deltopectoral triangle','Lateral region of thorax','Epigastric region','Umbilical region','Umbilicus','Hypochondriac region','Hypogastric region','Inguinal region','Lateral region of abdomen','Lumbar region','Sacral region','Infrascapular region','Interscapular region','Scapular region','Triangle of auscultation','Vertebral region','Axillary region','Deltoid region','Gluteal region','Anterior region of thigh','Posterior region of thigh','Gluteal fold','Femoral triangle','Hip region','Anal region']
 skin_src=[f'{t}.{s}' for t in trunk for s in LR]
 
 coll=bpy.data.collections.new('EXPORT'); bpy.context.scene.collection.children.link(coll)
@@ -96,8 +105,8 @@ bpy.context.view_layer.objects.active=coll.objects[0]
 bpy.ops.export_scene.gltf(filepath=OUT+'chest.glb', use_selection=True, export_apply=True, export_yup=True, export_normals=True, export_materials='NONE', export_texcoords=False, export_draco_mesh_compression_enable=False)
 # curves
 curves={}
-want=['Internal thoracic artery','Internal thoracic veins','Superior epigastric artery','Superior epigastric veins','Inferior epigastric artery','Inferior epigastric vein','Thoracodorsal artery','Thoracodorsal vein','Thoracodorsal nerve','Subscapular artery','Lateral thoracic artery','Superficial epigastric artery']
-names=[f'{w}.{s}' for w in want for s in LR]+['Right gastro-omental vein','Left gastro-omental vein']
+want=['Superior gluteal artery','Inferior gluteal artery','Lateral circumflex femoral artery','Medial circumflex femoral artery','Deep femoral artery','Perforating femoral arteries','Femoral artery','Posterior intercostal arteries','Musculophrenic artery','Lumbar arteries','External iliac artery','Internal thoracic artery','Internal thoracic veins','Superior epigastric artery','Superior epigastric veins','Inferior epigastric artery','Inferior epigastric vein','Thoracodorsal artery','Thoracodorsal vein','Thoracodorsal nerve','Subscapular artery','Lateral thoracic artery','Superficial epigastric artery']
+names=[f'{w}.{s}' for w in want for s in LR]+['Right gastro-omental vein','Left gastro-omental vein','Descending branch of lateral circumflex femoral artery','Descending branch of lateral circumflex femoral artery.l']
 for n in names:
     o=objs.get(n)
     if o is None or o.type!='CURVE': meta['missing'].append(n); continue

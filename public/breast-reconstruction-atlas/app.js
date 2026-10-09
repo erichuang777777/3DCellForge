@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { SCENARIOS, END_STATES, COMPARE_DEFAULT, INFO, TABLE, LAYER_NAMES } from './content.js';
+import { SCENARIOS as BASE_SCENARIOS, END_STATES as BASE_END, COMPARE_DEFAULT, INFO, LAYER_NAMES } from './content.js';
+import { CATS, BASE_META, EXTRA_SCENARIOS, TECH_BY_ID, DONORS, ZONE_L3 } from './techniques.js';
+const SCENARIOS = [...BASE_SCENARIOS.map((s) => ({ ...s, ...(BASE_META[s.id] || {}) })), ...EXTRA_SCENARIOS];
+const END_STATES = [...BASE_END, ...EXTRA_SCENARIOS.filter((x) => !BASE_END.some((e) => e.id === x.id)).map((x) => ({ id: x.id, label: x.short, from: [x.id, x.steps.length - 1] }))];
 import { CONFIG, INCISIONS, ZONES, analyze, incisionPaths, postShape } from './oncoplasty.js';
 
 THREE.ColorManagement.enabled = false;
@@ -145,7 +148,7 @@ const PAL = {
 };
 
 // ---------- 解剖分層 ----------
-const SUPERFICIAL = ['pecmaj', 'serratus', 'lat_', 'rectus', 'extobl', 'deltoid', 'teres', 'linea_alba'];
+const SUPERFICIAL = ['pecmaj', 'serratus', 'lat_', 'rectus', 'extobl', 'deltoid', 'teres', 'linea_alba', 'glutmax', 'gracilis', 'vastlat', 'rectfem', 'sartorius', 'tfl', 'addlong'];
 function layerOf(name) {
   if (name === 'skin') return 0;
   if (name.startsWith('fat')) return 1;
@@ -165,11 +168,16 @@ function fiberFor(name) {
   if (name.startsWith('deltoid')) return new THREE.Vector3(0.19 * s, 1.15, 0.0);
   if (name.startsWith('teres')) return new THREE.Vector3(0.15 * s, 1.3, 0.0);
   if (name.startsWith('intercostal')) return new THREE.Vector3(0.0, 0.5, 0.2);
+  if (name.startsWith('glutmax')) return new THREE.Vector3(0.17 * s, 0.75, -0.02);
+  if (/^(gracilis|vastlat|rectfem|addlong)/.test(name)) return new THREE.Vector3(0.09 * s, -1.0, 0.0);
+  if (name.startsWith('sartorius')) return new THREE.Vector3(0.0, -1.0, 0.05);
+  if (name.startsWith('tfl')) return new THREE.Vector3(0.14 * s, 0.4, 0.0);
+  if (name.startsWith('intobl')) return new THREE.Vector3(0.0, 1.4, 0.25);
   return new THREE.Vector3(0, 3, 0);
 }
 function materialFor(name) {
   if (name === 'skin') return atlasMat('skin', ...PAL.skin, { side: THREE.DoubleSide });
-  if (/^(pecmaj|pecmin|serratus|lat_|rectus|extobl|deltoid|teres|intercostal)/.test(name)) return atlasMat('muscle', ...PAL.muscle, { fiber: fiberFor(name) });
+  if (/^(pecmaj|pecmin|serratus|lat_|rectus|extobl|intobl|deltoid|teres|intercostal|glutmax|gracilis|vastlat|rectfem|sartorius|tfl|addlong)/.test(name)) return atlasMat('muscle', ...PAL.muscle, { fiber: fiberFor(name) });
   if (name === 'linea_alba') return atlasMat('plain', ...PAL.tendon);
   if (name.startsWith('cart')) return atlasMat('bone', ...PAL.cart);
   if (name === 'omentum') return atlasMat('omentum', ...PAL.omentum, { side: THREE.DoubleSide });
@@ -197,6 +205,13 @@ const CAMS = {
   side: { t: [-0.08, 1.24, 0.0], p: [-0.86, 1.3, 0.12] },
   back: { t: [0, 1.22, 0], p: [-0.2, 1.3, -0.9] },
   abdomen: { t: [0, 1.06, 0.06], p: [0.05, 1.15, 0.86] },
+  full: { t: [0, 1.0, 0.02], p: [-0.35, 1.15, 1.9] },
+  backLow: { t: [0, 0.9, -0.05], p: [-0.35, 1.05, -1.05] },
+  thigh: { t: [-0.06, 0.74, 0.04], p: [-0.35, 0.88, 0.95] },
+  thighIn: { t: [-0.05, 0.76, 0.0], p: [0.45, 0.86, 0.75] },
+  thighBack: { t: [-0.07, 0.78, -0.05], p: [-0.3, 0.88, -0.95] },
+  lateral: { t: [-0.12, 1.2, 0.0], p: [-0.95, 1.25, 0.25] },
+  backLat: { t: [-0.12, 1.2, -0.05], p: [-0.8, 1.3, -0.6] },
   glandZoom: { t: [-0.1, 1.245, 0.13], p: [-0.21, 1.275, 0.42] },
   simL: { t: [0.085, 1.24, 0.1], p: [0.2, 1.29, 0.78] },
   simR: { t: [-0.085, 1.24, 0.1], p: [-0.2, 1.29, 0.78] }
@@ -208,7 +223,7 @@ const instances = [];
 
 // ---------- 乳房建模 ----------
 const SIDES = { R: -1, L: 1 };
-const Q_LOCAL = { uoq: [0.038, 0.035], liq: [-0.032, -0.03] };
+const Q_LOCAL = { uoq: [0.038, 0.035], liq: [-0.032, -0.03], lat: [0.07, 0.0], low: [0.006, -0.048] };
 function sideFrame(s) {
   const f = new THREE.Vector3(0.25 * s, -0.05, 1).normalize();
   return { s, f };
@@ -236,15 +251,13 @@ function breastField(du, dw, p) {
     const dn2 = (du - (p.nx ?? 0.006)) ** 2 + (dw - (p.ny ?? -0.016)) ** 2;
     D += 0.004 * Math.exp(-dn2 / (2 * 0.0045 ** 2));
   }
+  const D0 = D;
   if (p.defect > 0) {
     const q = Q_LOCAL[p.dq || 'uoq'];
     D -= p.defect * Math.exp(-((du - q[0]) ** 2 + (dw - q[1]) ** 2) / (2 * 0.024 ** 2));
   }
-  if (p.defects?.length) {
-    const D0 = D;
-    for (const q of p.defects) if (q.d > 0) D -= q.d * Math.exp(-((du - q.u) ** 2 + (dw - q.w) ** 2) / (2 * q.s ** 2));
-    if (D0 > 0) D = Math.max(D, D0 * 0.12); // 凹陷不會深過原有組織厚度
-  }
+  for (const q of p.defects || []) if (q.d > 0) D -= q.d * Math.exp(-((du - q.u) ** 2 + (dw - q.w) ** 2) / (2 * q.s ** 2));
+  if (D < D0) D = D0 > 0 ? Math.max(D, D0 * 0.12) : D0; // 凹陷不會深過原有組織厚度
   const drop = nat ? 0.016 * (p.P / 0.064) * (p.ptosis ?? 1) * Math.max(D / Math.max(p.P, 1e-4), 0) ** 2 : 0;
   return { D, drop };
 }
@@ -322,13 +335,25 @@ function projectOnSkin(inst, x, y, zGuess = 0.12) {
   const n = hit.face.normal.clone();
   return { p: hit.point, n };
 }
+function projectRadialAxis(inst, x, y, z, ax, az) {
+  const dir = new THREE.Vector3(x - ax, 0, z - az); const dist = dir.length(); dir.normalize();
+  const origin = new THREE.Vector3(ax, y, az).addScaledVector(dir, dist + 0.05);
+  raycaster.set(origin, dir.clone().negate()); raycaster.far = 0.14;
+  const hit = raycaster.intersectObject(inst.skin, false)[0];
+  return hit ? { p: hit.point, n: hit.face.normal.clone() } : null;
+}
+function projectAlongNormal(inst, x, y, z, n) {
+  raycaster.set(new THREE.Vector3(x, y, z).addScaledVector(n, 0.08), n.clone().negate()); raycaster.far = 0.2;
+  const hit = raycaster.intersectObject(inst.skin, false)[0];
+  return hit ? { p: hit.point, n: hit.face.normal.clone() } : null;
+}
 function projectAlong(inst, x, y, f, zRef = 0.15) {
   const origin = new THREE.Vector3(x, y, zRef).addScaledVector(f, 0.45);
   raycaster.set(origin, f.clone().negate()); raycaster.far = 0.9;
   const hit = raycaster.intersectObject(inst.skin, false)[0];
   return hit ? { p: hit.point, n: hit.face.normal.clone() } : null;
 }
-function buildScars(inst, keys, custom = []) {
+function buildScars(inst, keys, custom = [], wscars = []) {
   const g = new THREE.Group();
   const mat = new THREE.MeshBasicMaterial({ color: PAL.scar });
   const dmat = new THREE.MeshBasicMaterial({ color: PAL.design });
@@ -351,6 +376,12 @@ function buildScars(inst, keys, custom = []) {
     }
     addScarCurve(g, inst, pts3, !!def.ellipse, !!def.dashed, mat, dmat);
   }
+  // 供區疤痕:世界座標,沿身體或大腿中軸徑向投影
+  for (const w of wscars) {
+    const [ax, az] = w.axis || [0, 0];
+    const nn = w.n ? new THREE.Vector3(...w.n).normalize() : null;
+    addScarCurve(g, inst, w.pts, !!w.closed, !!w.dashed, mat, dmat, (x, y, z) => projectRadialAxis(inst, x, y, z, ax, az) || (nn && projectAlongNormal(inst, x, y, z, nn)));
+  }
   // 個人化刀口:facing 座標(相對乳頭)
   for (const c of custom) {
     const n = inst.nipple?.[c.side] || regionBasePoint(inst, c.side, 0.006, -0.016);
@@ -361,11 +392,11 @@ function buildScars(inst, keys, custom = []) {
 }
 function addScarCurve(g, inst, pts3, closed, dashed, mat, dmat, proj) {
   {
-    const hits = pts3.map(([x, y, z]) => (proj ? proj(x, y) : projectOnSkin(inst, x, y, z))).filter(Boolean);
+    const hits = pts3.map(([x, y, z]) => (proj ? proj(x, y, z) : projectOnSkin(inst, x, y, z))).filter(Boolean);
     if (hits.length < 2) return;
     const curve = new THREE.CatmullRomCurve3(hits.map((h) => h.p.clone().addScaledVector(h.n, 0.0018)), closed);
     if (dashed) {
-      const L = curve.getLength(); const n = Math.floor(L / 0.006);
+      const L = curve.getLength(); const n = Math.max(6, Math.floor(L / Math.min(0.006, Math.max(L / 14, 0.002))));
       for (let i = 0; i < n; i++) {
         const m = new THREE.Mesh(new THREE.SphereGeometry(0.0013, 8, 6), dmat);
         m.position.copy(curve.getPointAt(i / n)); g.add(m);
@@ -450,9 +481,78 @@ function createInstance() {
   tear.computeVertexNormals(); inst.geoms = { round: sph, tear };
   inst.augM = {};
   for (const key of ['R', 'L']) inst.augM[key] = addPart('aug_' + key, new THREE.Mesh(sph, atlasMat('implant', ...PAL.implant, { transparent: true, depthWrite: false })), 9, { info: 'aug' });
+  // 術式庫通用皮瓣(最多兩塊,供疊加皮瓣)、血管蒂、穿通枝標記、ADM、脂肪滴
+  inst.gfm = [0, 1].map((i) => addPart('gflap_' + i, new THREE.Mesh(sph, atlasMat('flap', ...PAL.skin)), 9, { info: 'gflap' }));
+  inst.gped = new THREE.Mesh(new THREE.BufferGeometry(), atlasMat('plain', ...PAL.artery)); inst.gped.userData.info = 'gflap'; inst.root.add(inst.gped);
+  inst.perf = addPart('perf', new THREE.Mesh(new THREE.SphereGeometry(0.004, 14, 10), atlasMat('plain', '#e23b2e', '#7a1510', { hatch: 0 })), 9, { info: 'perf', outline: false });
+  inst.perf.material.depthTest = false; inst.perf.renderOrder = 10;
+  inst.adm = addPart('adm', new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55), atlasMat('plain', '#f1dfae', '#a88b4a', { side: THREE.DoubleSide, transparent: true, depthWrite: false })), 9, { info: 'adm', outline: false });
+  inst.admWrap = new THREE.SphereGeometry(1, 32, 16); inst.admLower = inst.adm.geometry;
+  inst.fatDrops = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), atlasMat('fat', ...PAL.fat), 220); inst.fatDrops.name = 'fatdrop'; inst.fatDrops.userData.info = 'fatdrop'; inst.root.add(inst.fatDrops);
+  const drape = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), atlasMat('plain', '#c9d6dc', '#7d8f98', { hatch: 0 }));
+  drape.position.set(0, 0.805, 0.012); drape.scale.set(0.04, 0.062, 0.06); drape.name = 'drape'; drape.userData.info = 'drape'; inst.root.add(drape);
   computeTargets(inst);
   buildGlandDetail(inst);
+  buildFatDrops(inst);
   return inst;
+}
+
+// ---------- 術式庫通用皮瓣 ----------
+function genericPath(inst, def, i) {
+  const key = def.id + ':' + i; if (inst.gpaths?.[key]) return inst.gpaths[key];
+  inst.gpaths = inst.gpaths || {};
+  const d = DONORS[def.donor]; const f = inst.regions.R.frame.f;
+  const c = def.count === 2 ? [i ? 0.065 : -0.065, d.c[1], d.c[2]] : d.c;
+  const start = new THREE.Vector3(...c); const nrm = new THREE.Vector3(...d.normal).normalize();
+  let end = def.zone ? inst.q[def.zone].clone() : inst.mound.clone();
+  if (def.count === 2) end.add(new THREE.Vector3(i ? 0.012 : -0.012, i ? -0.008 : 0.008, i ? -0.006 : 0.006));
+  let pts;
+  if (def.transfer === 'free') {
+    const p1 = start.clone().addScaledVector(nrm, 0.2); const p3 = end.clone().addScaledVector(f, 0.25);
+    pts = start.z < -0.02 ? [start, p1, new THREE.Vector3(-0.42, (start.y + end.y) / 2, 0.05), p3, end] : [start, p1, new THREE.Vector3(start.x - 0.08, (start.y + end.y) / 2, 0.38), p3, end];
+  } else {
+    const mid = start.clone().lerp(end, 0.5); const out = new THREE.Vector3(mid.x, 0, mid.z).normalize();
+    pts = [start, mid.addScaledVector(out, 0.012).add(new THREE.Vector3(0, 0.01, 0)), end];
+  }
+  const r = def.count === 2 ? d.r[0] / 2 : d.r[0];
+  const s1 = def.zone ? new THREE.Vector3(0.028, 0.022, 0.016) : def.count === 2 ? new THREE.Vector3(0.05, 0.046, 0.02) : def.implant ? new THREE.Vector3(0.062, 0.058, 0.018) : new THREE.Vector3(0.066, 0.062, 0.026);
+  const path = { curve: new THREE.CatmullRomCurve3(pts), s0: new THREE.Vector3(r, d.r[1], 0.018), s1, n0: nrm, n1: f.clone(), anchor: def.anchor ? new THREE.Vector3(...def.anchor) : null };
+  inst.gpaths[key] = path; return path;
+}
+function updateGenericFlap(inst, s) {
+  const def = s.gf.tech && TECH_BY_ID[s.gf.tech]; const peel = s.peel;
+  inst.gped.visible = false;
+  inst.gfm.forEach((m, i) => {
+    if (!def || s.gf.vis < 0.01 || i >= (def.count || 1)) { setOpacity(m, 0); return; }
+    const path = genericPath(inst, def, i); const t = THREE.MathUtils.smoothstep(s.gf.t, 0, 1);
+    m.position.copy(path.curve.getPointAt(t));
+    m.scale.copy(path.s0.clone().lerp(path.s1, THREE.MathUtils.smoothstep(t, 0.5, 1)));
+    const n = path.n0.clone().lerp(path.n1, THREE.MathUtils.smoothstep(t, 0.3, 1)).normalize();
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    m.material.uniforms.uFiber.value.copy(n);
+    const hide = t > 0.98 && peel < 0.5 && s.ghostSkin > 0.9 && !(def.zone && peel >= 1.5);
+    setOpacity(m, hide ? 0 : s.gf.vis);
+    if (i === 0 && path.anchor && !hide && t > 0.02) {
+      const end = m.position.clone(); const mid = path.anchor.clone().lerp(end, 0.5).add(new THREE.Vector3(0, 0, 0.015));
+      inst.gped.geometry.dispose();
+      inst.gped.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([path.anchor.clone(), mid, end]), 20, def.pedMuscle ? 0.008 : 0.0016, 8, false);
+      const mu = inst.gped.material.uniforms; const col = def.pedMuscle ? PAL.muscle : PAL.artery;
+      mu.uColor.value.set(col[0]); mu.uShade.value.set(col[1]); mu.uKind.value = def.pedMuscle ? KIND.muscle : KIND.plain;
+      inst.gped.visible = true; setOpacity(inst.gped, s.gf.vis);
+    }
+  });
+}
+function buildFatDrops(inst) {
+  const m = inst.fatDrops; const reg = inst.regions.R; const f = reg.frame.f; const p = BASE_STATE.R; const mtx = new THREE.Matrix4(); const q = Q_LOCAL.uoq;
+  for (let i = 0; i < m.count; i++) {
+    const a = hash1(i * 3.1) * Math.PI * 2, rr = Math.sqrt(hash1(i * 7.7)) * 0.03;
+    const u = q[0] + rr * Math.cos(a), w = q[1] + rr * Math.sin(a);
+    const { D } = breastField(u, w, p);
+    const pt = basePointInterp(inst, 'R', u, w).addScaledVector(f, Math.max(D, 0.004) * (0.25 + 0.6 * hash1(i * 13.3)));
+    const r = 0.0014 + 0.0012 * hash1(i * 5.1);
+    mtx.makeScale(r, r, r).setPosition(pt); m.setMatrixAt(i, mtx);
+  }
+  m.userData.total = m.count; m.instanceMatrix.needsUpdate = true; m.computeBoundingSphere(); m.count = 0;
 }
 
 // ---------- 乳腺細部構造(右乳,程式建模示意) ----------
@@ -595,7 +695,8 @@ const BASE_STATE = {
   tq: 'uoq', tumor: 0, margin: 0, cut: 0, scars: [], paddle: 0, wound: 0, ghostSkin: 1, ghostMus: 1, hi: [], vessels: [],
   flap: { kind: null, t: 0, vis: 0 }, imp: { kind: null, fill: 0, vis: 0 }, anast: 0,
   tumorAt: null, custom: [], keepGland: false, xray: false,
-  aug: { plane: null, fill: 0, vis: 0, shapeR: 'round', shapeL: 'round' }, glandShell: 1, glandDetail: 0, hiGland: '', density: 1.5, fatOp: null, lymph: 0
+  aug: { plane: null, fill: 0, vis: 0, shapeR: 'round', shapeL: 'round' }, glandShell: 1, glandDetail: 0, hiGland: '', density: 1.5, fatOp: null, lymph: 0,
+  gf: { tech: null, t: 0, vis: 0 }, wscars: [], woundAt: null, perfAt: null, paddleR: null, fatg: 0
 };
 function merge(a, b) {
   if (b === undefined) return structuredClone(a);
@@ -624,6 +725,8 @@ function prepareFrom(from, to) {
   if (to.imp.kind && !f.imp.kind) f.imp = { kind: to.imp.kind, fill: 0, vis: 0 };
   if (to.imp.kind && f.imp.kind && f.imp.kind !== to.imp.kind) f.imp.kind = to.imp.kind;
   if (!to.imp.kind && f.imp.kind) to.imp = { ...f.imp, vis: 0 };
+  if (to.gf.tech && f.gf.tech !== to.gf.tech) f.gf = { tech: to.gf.tech, t: 0, vis: to.gf.vis };
+  if (!to.gf.tech && f.gf.tech) to.gf = { ...f.gf, vis: 0 };
   if (to.aug.plane && !f.aug.plane) f.aug = { ...to.aug, fill: 0, vis: 0 };
   if (!to.aug.plane && f.aug.plane) to.aug = { ...f.aug, vis: 0 };
   return f;
@@ -699,10 +802,13 @@ function applyState(inst, s, tweening = false) {
   // 乳暈、皮島、傷口
   const mu = inst.skin.material.uniforms;
   const nR = inst.nipple?.R, nL = inst.nipple?.L;
-  mu.uAreR.value.set(nR?.x || 0, nR?.y || 0, nR?.z || 0, nR ? 0.017 : 0);
-  mu.uAreL.value.set(nL?.x || 0, nL?.y || 0, nL?.z || 0, nL ? 0.017 : 0);
+  mu.uAreR.value.set(nR?.x || 0, nR?.y || 0, nR?.z || 0, nR ? 0.006 + 0.011 * (s.R.tat ?? 1) : 0);
+  mu.uAreL.value.set(nL?.x || 0, nL?.y || 0, nL?.z || 0, nL ? 0.006 + 0.011 * (s.L.tat ?? 1) : 0);
   mu.uPaddle.value.w = s.paddle;
+  if (s.paddleR) mu.uPaddleR.value.set(...s.paddleR); else mu.uPaddleR.value.set(0.045, 0.032, 0.06);
   mu.uWound.value.w = s.wound;
+  if (s.woundAt) { mu.uWound.value.set(s.woundAt.c[0], s.woundAt.c[1], s.woundAt.c[2], s.wound); mu.uWoundR.value.set(...s.woundAt.r); }
+  else { mu.uWound.value.set(0, 0.955, 0.11, s.wound); mu.uWoundR.value.set(0.13, 0.05, 0.08); }
   // 腫瘤與缺損
   const ta = s.tumorAt;
   const q = ta ? simTumorPoint(inst, s) : inst.q[s.tq];
@@ -734,7 +840,10 @@ function applyState(inst, s, tweening = false) {
   // 假體
   if (s.imp.kind && s.imp.vis > 0.01) {
     const f = inst.regions.R.frame.f; const fill = s.imp.fill; const half = 0.004 + 0.016 * fill;
-    inst.implant.position.copy(inst.chestWall).addScaledVector(f, half);
+    const pl = s.imp.plane;
+    if (pl === 'pre') inst.implant.position.copy(inst.pec.R).addScaledVector(f, half + 0.002);
+    else if (pl === 'dual') inst.implant.position.copy(inst.pec.R).addScaledVector(f, half - 0.006);
+    else inst.implant.position.copy(inst.chestWall).addScaledVector(f, half);
     inst.implant.scale.set(0.054, 0.05, half); inst.implant.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), f);
     inst.implant.userData.info = s.imp.kind;
     const col = s.imp.kind === 'expander' ? PAL.expander : PAL.implant;
@@ -744,7 +853,14 @@ function applyState(inst, s, tweening = false) {
     inst.port.visible = s.imp.kind === 'expander' && vis > 0.01;
     inst.port.position.copy(inst.implant.position).addScaledVector(f, half + 0.001).add(new THREE.Vector3(0, -0.012, 0));
     inst.port.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), f);
-  } else { setOpacity(inst.implant, 0); inst.port.visible = false; }
+    const admOn = (s.imp.adm || 0) > 0.01 && vis > 0.01;
+    if (admOn) {
+      inst.adm.geometry = s.imp.admType === 'wrap' ? inst.admWrap : inst.admLower;
+      inst.adm.position.copy(inst.implant.position); inst.adm.quaternion.copy(inst.implant.quaternion);
+      inst.adm.scale.set(0.054 * 1.07, 0.05 * 1.07, half * 1.15);
+      inst.adm.material.userData.alwaysTransparent = true; setOpacity(inst.adm, 0.55 * s.imp.adm);
+    } else setOpacity(inst.adm, 0);
+  } else { setOpacity(inst.implant, 0); inst.port.visible = false; setOpacity(inst.adm, 0); }
   // 隆乳假體
   for (const key of ['R', 'L']) {
     const m = inst.augM[key]; const a = s.aug;
@@ -759,16 +875,22 @@ function applyState(inst, s, tweening = false) {
     setOpacity(m, peel >= 0.5 || s.ghostSkin < 0.9 ? a.vis * 0.9 : 0);
   }
   updateGlandDetail(inst, s);
+  updateGenericFlap(inst, s);
+  // 穿通枝標記
+  if (s.perfAt) { inst.perf.position.set(...s.perfAt); inst.perf.scale.setScalar(1 + 0.3 * Math.sin(TIME.value * 4)); setOpacity(inst.perf, 1); inst.perf.material.userData.alwaysTransparent = true; } else setOpacity(inst.perf, 0);
+  // 脂肪滴
+  inst.fatDrops.visible = s.fatg > 0.01;
+  if (inst.fatDrops.visible) { const n = Math.round(s.fatg * inst.fatDrops.userData.total); inst.fatDrops.count = n; }
   // 吻合點
   inst.anast.position.copy(inst.anastPos); setOpacity(inst.anast, s.anast);
   inst.anast.scale.setScalar(1 + 0.35 * Math.sin(TIME.value * 4));
   // 疤痕
-  const sk = JSON.stringify([s.scars, s.custom, inst.key.breast]);
+  const sk = JSON.stringify([s.scars, s.custom, s.wscars, inst.key.breast]);
   if (inst.key.scars !== sk) {
     if (tweening) { inst.scars.visible = false; return changed; }
     inst.key.scars = sk; inst.root.remove(inst.scars);
     inst.scars.traverse((o) => o.geometry?.dispose());
-    inst.scars = buildScars(inst, s.scars, s.custom); inst.root.add(inst.scars);
+    inst.scars = buildScars(inst, s.scars, s.custom, s.wscars); inst.root.add(inst.scars);
   }
   inst.scars.visible = peel < 0.5 && s.ghostSkin > 0.3;
   return changed;
@@ -812,17 +934,16 @@ const ui = {
   infoName: document.getElementById('infoName'), infoEn: document.getElementById('infoEn'), infoText: document.getElementById('infoText'), infoClin: document.getElementById('infoClin'),
   pros: document.getElementById('pros'), cons: document.getElementById('cons'), fit: document.getElementById('fit'), pcTitle: document.getElementById('pcTitle'), table: document.getElementById('cmpTable')
 };
-const app = { scn: 'bcs', step: 0, mode: 'single', peelOverride: null, tween: null, camTween: null, pick: null };
+const app = { scn: 'bcs', cat: 'surgery', ovAll: false, step: 0, mode: 'single', peelOverride: null, tween: null, camTween: null, pick: null };
 
 function el(tag, attrs = {}, text) { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text !== undefined) e.textContent = text; return e; }
 
 function buildUI() {
-  for (const s of SCENARIOS) {
-    const b = el('button', { class: 'tab', 'aria-pressed': 'false', 'data-id': s.id }); b.textContent = s.short;
-    b.addEventListener('click', () => selectScenario(s.id)); ui.tabs.append(b);
-  }
-  const simTab = el('button', { class: 'tab simtab', 'aria-pressed': 'false', 'data-id': 'sim' }, '模擬我的腫瘤');
-  simTab.addEventListener('click', selectSim); ui.tabs.append(simTab);
+  const cats = document.getElementById('cats');
+  for (const c of CATS) { const b = el('button', { class: 'tab', 'aria-pressed': 'false', 'data-cat': c.id }, c.zh); b.addEventListener('click', () => selectScenario(SCENARIOS.find((x) => x.cat === c.id).id)); cats.append(b); }
+  const simTab = el('button', { class: 'tab simtab', 'aria-pressed': 'false', 'data-cat': 'sim' }, '模擬我的腫瘤');
+  simTab.addEventListener('click', selectSim); cats.append(simTab);
+  document.getElementById('ovAll').addEventListener('click', (e) => { app.ovAll = !app.ovAll; e.currentTarget.setAttribute('aria-pressed', String(app.ovAll)); renderOverview(); });
   buildSimUI();
   for (const [id, label] of VIEW_LABELS) {
     const b = el('button', { class: 'ctl', 'aria-pressed': 'false', 'data-v': id }, label);
@@ -835,17 +956,36 @@ function buildUI() {
   ui.peel.addEventListener('input', () => { app.peelOverride = Number(ui.peel.value); ui.peelName.textContent = LAYER_NAMES[app.peelOverride]; for (const i of instances) { if (i.target) i.target.peel = app.peelOverride; } });
   ui.mSingle.addEventListener('click', () => setMode('single'));
   ui.mCompare.addEventListener('click', () => setMode('compare'));
-  // 對照表
-  const thead = el('thead'); const hr = el('tr'); hr.append(el('th')); for (const c of TABLE.cols) hr.append(el('th', {}, c)); thead.append(hr);
-  const tbody = el('tbody'); for (const r of TABLE.rows) { const tr = el('tr'); tr.append(el('th', {}, r[0])); for (const c of r.slice(1)) tr.append(el('td', {}, c)); tbody.append(tr); }
-  ui.table.append(thead, tbody);
+}
+
+function renderTabs(cat) {
+  for (const b of document.getElementById('cats').children) b.setAttribute('aria-pressed', String(b.dataset.cat === cat));
+  ui.tabs.replaceChildren(...SCENARIOS.filter((x) => x.cat === cat).map((x) => {
+    const b = el('button', { class: 'tab', 'aria-pressed': String(x.id === app.scn), 'data-id': x.id }, x.short);
+    b.addEventListener('click', () => selectScenario(x.id)); return b;
+  }));
+  ui.tabs.hidden = cat === 'sim';
+}
+
+function renderOverview() {
+  const cat = app.cat; const rows = SCENARIOS.filter((x) => x.meta && (app.ovAll || x.cat === cat || cat === 'sim'));
+  document.getElementById('ovTitle').textContent = app.ovAll || cat === 'sim' ? '術式總覽(全部)' : `術式總覽:${CATS.find((c) => c.id === cat)?.zh || ''}`;
+  const head = ['術式', '分類', '組織來源', '取用肌肉', '血管', '方式', '額外疤痕', '主要風險'];
+  const thead = el('thead'); const hr = el('tr'); for (const h of head) hr.append(el('th', {}, h)); thead.append(hr);
+  const tbody = el('tbody');
+  for (const x of rows) {
+    const tr = el('tr', x.id === app.scn ? { class: 'cur' } : {}); const m = x.meta;
+    const nm = el('td', { class: 'nm' }); const a = el('a', { href: '#' + x.id }, x.short); a.addEventListener('click', (e) => { e.preventDefault(); selectScenario(x.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }); nm.append(a);
+    tr.append(nm); for (const v of [CATS.find((c) => c.id === x.cat)?.zh, m.src, m.muscle, m.vessel, m.mode, m.scar, m.risk]) tr.append(el('td', {}, v || '—'));
+    tbody.append(tr);
+  }
+  ui.table.replaceChildren(thead, tbody);
 }
 
 function selectScenario(id) {
-  app.scn = id; app.step = 0;
+  app.scn = id; app.step = 0; app.cat = SCENARIOS.find((s) => s.id === id).cat; renderTabs(app.cat); renderOverview();
   document.getElementById('simPanel').hidden = true; document.getElementById('stepPanel').hidden = false; document.getElementById('pcSect').hidden = false;
   const scn = SCENARIOS.find((s) => s.id === id);
-  for (const b of ui.tabs.children) b.setAttribute('aria-pressed', String(b.dataset.id === id));
   ui.scnTag.textContent = scn.tag; ui.scnName.textContent = scn.name; ui.scnOne.textContent = scn.one;
   ui.steps.replaceChildren(...scn.steps.map((st, i) => {
     const li = el('li'); const b = el('button'); b.append(el('span', { class: 'n' }, String(i + 1)), el('span', {}, st.title));
@@ -853,7 +993,8 @@ function selectScenario(id) {
   }));
   ui.pcTitle.textContent = scn.name + ':優點與限制';
   for (const [k, list] of [['pros', scn.pros], ['cons', scn.cons], ['fit', scn.fit]]) ui[k].replaceChildren(...list.map((t) => el('li', {}, t)));
-  const [a, b] = COMPARE_DEFAULT[id]; ui.selA.value = a; ui.selB.value = b;
+  const scnCat = SCENARIOS.find((s) => s.id === id).cat;
+  const [a, b] = COMPARE_DEFAULT[id] || (scnCat === 'partial' ? ['bcs', id] : [id === 'diep' ? 'tram' : 'diep', id]); ui.selA.value = a; ui.selB.value = b;
   if (app.mode === 'compare') setupCompare(); else goStep(0, true);
 }
 
@@ -939,8 +1080,7 @@ function buildSimUI() {
 }
 
 function selectSim() {
-  app.scn = 'sim';
-  for (const b of ui.tabs.children) b.setAttribute('aria-pressed', String(b.dataset.id === 'sim'));
+  app.scn = 'sim'; app.cat = 'sim'; renderTabs('sim'); renderOverview();
   $('simPanel').hidden = false; $('stepPanel').hidden = true; $('pcSect').hidden = true;
   if (app.mode === 'compare') { app.mode = 'single'; ui.mSingle.setAttribute('aria-pressed', 'true'); ui.mCompare.setAttribute('aria-pressed', 'false'); ui.cmpbar.hidden = true; ui.cmplabels.hidden = true; }
   app.peelOverride = null; ui.peel.value = '0'; ui.peelName.textContent = LAYER_NAMES[0];
@@ -1024,7 +1164,8 @@ function renderResult(r) {
   if (r.warnings.length) { const ul = el('ul'); for (const w of r.warnings) ul.append(el('li', {}, w)); kids.push(ul); }
   if (r.level === 3) {
     const row = el('div', { class: 'stepnav' });
-    for (const [id, label] of [['ld', '看背闊肌'], ['omentum', '看大網膜'], ['diep', '看全切重建']]) { const b = el('button', {}, label); b.addEventListener('click', () => selectScenario(id)); row.append(b); }
+    for (const id of [...(ZONE_L3[r.zone] || []), 'diep']) { const sc = SCENARIOS.find((x) => x.id === id); if (!sc) continue; const b = el('button', {}, '看' + sc.short); b.addEventListener('click', () => selectScenario(id)); row.append(b); }
+    row.style.flexWrap = 'wrap';
     kids.push(row);
   }
   kids.push(el('p', { class: 'hint' }, '數值為依球形切除估算的示意,實際切除範圍依手術而定。'));
@@ -1209,7 +1350,9 @@ async function boot() {
   instances.push(createInstance(), createInstance());
   ui.loading.hidden = true;
   resize();
-  if (location.hash === '#sim') selectSim(); else selectScenario('bcs');
+  const hid = location.hash.slice(1);
+  if (hid === 'sim') selectSim(); else selectScenario(SCENARIOS.some((x) => x.id === hid) ? hid : 'bcs');
+  window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (h === 'sim') selectSim(); else if (SCENARIOS.some((x) => x.id === h)) selectScenario(h); });
   requestAnimationFrame(frame);
 }
 boot().catch((err) => { ui.loading.textContent = '模型載入失敗:' + err.message; console.error(err); });
