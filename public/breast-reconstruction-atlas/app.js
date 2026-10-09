@@ -13,9 +13,13 @@ const INK = new THREE.Color('#2a1e18');
 const VERT = `
 varying vec3 vW; varying vec3 vN;
 void main(){
-  vec4 w = modelMatrix * vec4(position, 1.0);
+  vec4 lp = vec4(position, 1.0); vec3 ln = normal;
+#ifdef USE_INSTANCING
+  lp = instanceMatrix * lp; ln = mat3(instanceMatrix) * ln;
+#endif
+  vec4 w = modelMatrix * lp;
   vW = w.xyz;
-  vN = normalize(mat3(modelMatrix) * normal);
+  vN = normalize(mat3(modelMatrix) * ln);
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 
@@ -193,6 +197,7 @@ const CAMS = {
   side: { t: [-0.08, 1.24, 0.0], p: [-0.86, 1.3, 0.12] },
   back: { t: [0, 1.22, 0], p: [-0.2, 1.3, -0.9] },
   abdomen: { t: [0, 1.06, 0.06], p: [0.05, 1.15, 0.86] },
+  glandZoom: { t: [-0.1, 1.245, 0.13], p: [-0.21, 1.275, 0.42] },
   simL: { t: [0.085, 1.24, 0.1], p: [0.2, 1.29, 0.78] },
   simR: { t: [-0.085, 1.24, 0.1], p: [-0.2, 1.29, 0.78] }
 };
@@ -221,7 +226,7 @@ function profile(du, dw, p) {
   if (r2 >= 1) return 0;
   if (shape === 'flat' || p.P < 0.0005) return 0.0015 * (1 - r2);
   let f = Math.pow(1 - r2, 1.35);
-  if (dw > 0) f *= 1 - 0.32 * Math.min(dw / ry, 1);
+  if (dw > 0) f *= 1 - 0.32 * (1 - (p.upper || 0)) * Math.min(dw / ry, 1);
   return p.P * f;
 }
 function breastField(du, dw, p) {
@@ -302,7 +307,9 @@ const SCAR_DEFS = {
   abd_design: { ellipse: [0, 0.955, 0.125, 0.05], dashed: true },
   abd_line: { world: [[-0.135, 0.955, 0.1], [-0.07, 0.935, 0.12], [0, 0.93, 0.12], [0.07, 0.935, 0.12], [0.135, 0.955, 0.1]] },
   umb: { ellipse: [0.0075, 1.0175, 0.008, 0.008] },
-  ports: { marks: [[0.05, 1.1], [-0.055, 1.06], [0.0075, 1.0]] }
+  ports: { marks: [[0.05, 1.1], [-0.055, 1.06], [0.0075, 1.0]] },
+  axR_d: { world: [[-0.135, 1.285, 0.05], [-0.148, 1.3, 0.025], [-0.156, 1.315, 0.0]], dashed: true },
+  axL_d: { world: [[0.135, 1.285, 0.05], [0.148, 1.3, 0.025], [0.156, 1.315, 0.0]], dashed: true }
 };
 const raycaster = new THREE.Raycaster();
 function projectOnSkin(inst, x, y, zGuess = 0.12) {
@@ -437,8 +444,108 @@ function createInstance() {
   inst.anast = addPart('anast', new THREE.Mesh(new THREE.SphereGeometry(0.0065, 16, 12), atlasMat('plain', '#ffd34d', '#b88a00', { hatch: 0 })), 9, { info: 'anast', outline: false });
   inst.anast.material.depthTest = false; inst.anast.renderOrder = 10;
   inst.scars = new THREE.Group(); inst.root.add(inst.scars);
+  // 隆乳假體(雙側)
+  const tear = new THREE.SphereGeometry(1, 48, 32); const tpp = tear.attributes.position;
+  for (let i = 0; i < tpp.count; i++) { const y = tpp.getY(i); const z = tpp.getZ(i); tpp.setZ(i, y > 0 ? z * (1 - 0.5 * y) : z * 1.06); tpp.setY(i, y * (y > 0 ? 0.95 : 1)); }
+  tear.computeVertexNormals(); inst.geoms = { round: sph, tear };
+  inst.augM = {};
+  for (const key of ['R', 'L']) inst.augM[key] = addPart('aug_' + key, new THREE.Mesh(sph, atlasMat('implant', ...PAL.implant, { transparent: true, depthWrite: false })), 9, { info: 'aug' });
   computeTargets(inst);
+  buildGlandDetail(inst);
   return inst;
+}
+
+// ---------- 乳腺細部構造(右乳,程式建模示意) ----------
+function hash1(n) { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+function basePointInterp(inst, key, u, w) {
+  const reg = inst.regions[key]; const base = inst.skin.userData.base; const best = [];
+  for (let k = 0; k < reg.idx.length; k++) {
+    const d = (reg.du[k] - u) ** 2 + (reg.dw[k] - w) ** 2;
+    if (best.length < 4 || d < best[3][0]) { best.push([d, k]); best.sort((a, b) => a[0] - b[0]); if (best.length > 4) best.pop(); }
+  }
+  const out = new THREE.Vector3(); let ws = 0;
+  for (const [d, k] of best) { const i = reg.idx[k]; const wgt = 1 / (Math.sqrt(d) + 1e-4); out.x += base[i * 3] * wgt; out.y += base[i * 3 + 1] * wgt; out.z += base[i * 3 + 2] * wgt; ws += wgt; }
+  return out.multiplyScalar(1 / ws);
+}
+function buildGlandDetail(inst) {
+  const p = BASE_STATE.R; const f = inst.regions.R.frame.f;
+  const P = (u, w, frac) => { const { D, drop } = breastField(u, w, p); return basePointInterp(inst, 'R', u, w).addScaledVector(f, Math.max(D, 0.002) * frac).add(new THREE.Vector3(0, -drop * frac, 0)); };
+  const group = new THREE.Group(); group.name = 'glandDetail';
+  const mats = {
+    duct: atlasMat('plain', '#f2e3c4', '#a88a5c', { hatch: 0 }), sinus: atlasMat('plain', '#f2e3c4', '#a88a5c', { hatch: 0 }),
+    lobule: atlasMat('gland', '#eeb2a6', '#9c5b51'), cooper: atlasMat('plain', '#f6f3ea', '#a39f92', { hatch: 0 }),
+    node: atlasMat('plain', '#c9b467', '#6f5f2a'), sentinel: atlasMat('plain', '#45b089', '#1d5c45'), lymph: atlasMat('plain', '#93c47d', '#4b7a3a', { hatch: 0 })
+  };
+  const add = (geo, key, parent = group) => { const m = new THREE.Mesh(geo, mats[key]); m.name = key; m.userData.info = key; parent.add(m); return m; };
+  const nx = 0.006, ny = -0.016; const lob = [];
+  const ducts = []; const N = 16;
+  for (let i = 0; i < N; i++) ducts.push({ th: (2 * Math.PI * i) / N + 0.12 * Math.sin(i * 2.3), ext: 0.78 + 0.1 * hash1(i) });
+  ducts.push({ th: 0.72, ext: 1.22 }); // 腋尾
+  ducts.forEach((dct, i) => {
+    const su = Math.sin(dct.th), sw = Math.cos(dct.th);
+    const rx = su > 0 ? 0.085 : 0.068, ry = sw > 0 ? 0.095 : 0.062;
+    const L = dct.ext / Math.sqrt((su / rx) ** 2 + (sw / ry) ** 2);
+    const at = (t, side = 0, bl = 0) => {
+      const wig = 0.004 * Math.sin(t * Math.PI * 1.5 + i);
+      const bu = su * Math.cos(side * 0.55) - sw * Math.sin(side * 0.55), bw = sw * Math.cos(side * 0.55) + su * Math.sin(side * 0.55);
+      const u = nx + su * L * t + sw * wig + bu * bl, w = ny + sw * L * t - su * wig + bw * bl;
+      return { u, w, frac: Math.max(0.94 - 0.56 * Math.pow(t, 0.8) - bl * 3, 0.25) };
+    };
+    const pts = []; for (let k = 0; k <= 14; k++) { const a = at(k / 14); pts.push(P(a.u, a.w, a.frac)); }
+    const curve = new THREE.CatmullRomCurve3(pts);
+    add(new THREE.TubeGeometry(curve, 48, 0.0014, 6), 'duct');
+    const sp = curve.getPointAt(0.12); const sn = add(new THREE.SphereGeometry(0.0032, 14, 10), 'sinus'); sn.position.copy(sp);
+    sn.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), curve.getTangentAt(0.12)); sn.scale.set(1, 1, 1.7);
+    const tips = [{ t: 1, side: 0, bl: 0 }];
+    for (const tb of [0.38, 0.52, 0.66, 0.8, 0.93]) for (const side of [-1, 1]) tips.push({ t: tb, side, bl: 0.011 + 0.007 * hash1(i * 31 + tb * 100 + side) });
+    tips.forEach((tp, j) => {
+      const a0 = at(tp.t); const a1 = at(tp.t, tp.side, tp.bl);
+      if (tp.bl > 0) add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([P(a0.u, a0.w, a0.frac), P(a1.u, a1.w, a1.frac)]), 6, 0.0008, 5), 'duct');
+      const c = P(a1.u, a1.w, a1.frac);
+      for (let q = 0; q < 4; q++) {
+        const h = i * 997 + j * 37 + q * 7;
+        lob.push({ pos: c.clone().add(new THREE.Vector3(hash1(h) - 0.5, hash1(h + 1) - 0.5, hash1(h + 2) - 0.5).multiplyScalar(0.007)), r: 0.0026 + 0.0013 * hash1(h + 3), rnd: hash1(h + 4), u: a1.u, w: a1.w });
+      }
+    });
+  });
+  const lm = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), mats.lobule, lob.length); lm.name = 'lobule'; lm.userData.info = 'lobule'; group.add(lm);
+  // Cooper 韌帶
+  for (let k = 0; k < 28; k++) {
+    const L0 = lob[Math.floor(hash1(k * 13 + 5) * lob.length)];
+    const sk = P(L0.u + (hash1(k) - 0.5) * 0.01, L0.w + (hash1(k + 9) - 0.5) * 0.01, 1.0);
+    const mid = L0.pos.clone().lerp(sk, 0.5).add(new THREE.Vector3(0, 0.003, 0));
+    add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([L0.pos.clone(), mid, sk]), 8, 0.0005, 4), 'cooper');
+  }
+  // 淋巴結與淋巴管
+  const lymphG = new THREE.Group(); group.add(lymphG);
+  const sentinel = new THREE.Vector3(-0.128, 1.305, 0.035);
+  const sn2 = add(new THREE.SphereGeometry(0.0075, 18, 12), 'sentinel', lymphG); sn2.position.copy(sentinel);
+  [[-0.14, 1.32, 0.02, 0.005], [-0.148, 1.296, 0.008, 0.0045], [-0.137, 1.338, 0.0, 0.006], [-0.15, 1.33, -0.012, 0.0045], [-0.128, 1.355, -0.005, 0.005], [-0.03, 1.29, 0.084, 0.0028], [-0.03, 1.31, 0.086, 0.0028], [-0.029, 1.33, 0.088, 0.0028]].forEach(([x, y, z, r]) => { const m = add(new THREE.SphereGeometry(r * 1.4, 14, 10), 'node', lymphG); m.position.set(x, y, z); m.scale.set(1.25, 1, 1); });
+  for (const [u, w] of [[0.05, 0.04], [0.06, -0.02], [0.0, 0.0], [0.03, 0.07]]) {
+    const a = P(u, w, 0.6); const mid = a.clone().lerp(sentinel, 0.5).add(new THREE.Vector3(0, 0.01, 0.015));
+    add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([a, mid, sentinel]), 20, 0.001, 5), 'lymph', lymphG);
+  }
+  for (const k of ['node', 'sentinel', 'lymph']) mats[k].depthTest = false;
+  lymphG.traverse((o) => { if (o.isMesh) o.renderOrder = 9; });
+  inst.root.add(group);
+  inst.gd = { group, mats, lm, lob, lymphG, key: '' };
+}
+function updateGlandDetail(inst, s) {
+  const gd = inst.gd; const show = s.glandDetail;
+  gd.group.visible = show > 0.01;
+  if (!gd.group.visible) return;
+  for (const [k, m] of Object.entries(gd.mats)) {
+    const op = ['node', 'sentinel', 'lymph'].includes(k) ? Math.min(show, s.lymph) : show;
+    m.uniforms.uOpacity.value = op; const tr = op < 0.995 || !m.depthTest; if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; } m.depthWrite = op > 0.6;
+    m.uniforms.uHi.value = s.hiGland === k || (s.hiGland === 'duct' && k === 'sinus') ? 1 : 0;
+  }
+  gd.lymphG.visible = s.lymph > 0.01;
+  const dk = s.density.toFixed(3);
+  if (gd.key !== dk) {
+    gd.key = dk; const frac = 0.3 + 0.7 * (s.density / 3); const mult = 0.75 + 0.2 * s.density; const mtx = new THREE.Matrix4();
+    gd.lob.forEach((l, i) => { const r = l.rnd < frac ? l.r * mult : 0; mtx.makeScale(r, r, r).setPosition(l.pos); gd.lm.setMatrixAt(i, mtx); });
+    gd.lm.instanceMatrix.needsUpdate = true; gd.lm.computeBoundingSphere();
+  }
 }
 
 function regionBasePoint(inst, key, du, dw) {
@@ -460,6 +567,14 @@ function computeTargets(inst) {
   raycaster.set(new THREE.Vector3(mound.x, mound.y, 0.5), new THREE.Vector3(0, 0, -1)); raycaster.far = 1;
   const hit = pec ? raycaster.intersectObject(pec, false)[0] : null;
   inst.chestWall = hit ? hit.point.clone().addScaledVector(f, -0.012) : mound.clone().addScaledVector(f, -0.02);
+  inst.pec = {};
+  for (const key of ['R', 'L']) {
+    const fk = inst.regions[key].frame.f; const m = regionBasePoint(inst, key, 0, -0.004);
+    const pm = inst.byName.get(key === 'R' ? 'pecmaj_r' : 'pecmaj_l');
+    raycaster.set(new THREE.Vector3(m.x, m.y, 0.5), new THREE.Vector3(0, 0, -1)); raycaster.far = 1;
+    const h = pm ? raycaster.intersectObject(pm, false)[0] : null;
+    inst.pec[key] = h ? h.point.clone() : m.clone().addScaledVector(fk, -0.008);
+  }
   // 吻合點:內乳動脈約第三肋間
   const ita = BASE.curves['Internal thoracic artery.r']?.[0] || [[-0.03, 1.32, 0.09]];
   let ap = ita[0], bd = 1e9; for (const p of ita) { const d = Math.abs(p[1] - 1.33); if (d < bd) { bd = d; ap = p; } }
@@ -479,7 +594,8 @@ const BASE_STATE = {
   peel: 0, R: { P: 0.064, shape: 'natural', areola: true, defect: 0, dq: 'uoq', gland: true, fat: true }, L: { P: 0.064, shape: 'natural', areola: true, defect: 0, dq: 'uoq', gland: true, fat: true },
   tq: 'uoq', tumor: 0, margin: 0, cut: 0, scars: [], paddle: 0, wound: 0, ghostSkin: 1, ghostMus: 1, hi: [], vessels: [],
   flap: { kind: null, t: 0, vis: 0 }, imp: { kind: null, fill: 0, vis: 0 }, anast: 0,
-  tumorAt: null, custom: [], keepGland: false, xray: false
+  tumorAt: null, custom: [], keepGland: false, xray: false,
+  aug: { plane: null, fill: 0, vis: 0, shapeR: 'round', shapeL: 'round' }, glandShell: 1, glandDetail: 0, hiGland: '', density: 1.5, fatOp: null, lymph: 0
 };
 function merge(a, b) {
   if (b === undefined) return structuredClone(a);
@@ -508,6 +624,8 @@ function prepareFrom(from, to) {
   if (to.imp.kind && !f.imp.kind) f.imp = { kind: to.imp.kind, fill: 0, vis: 0 };
   if (to.imp.kind && f.imp.kind && f.imp.kind !== to.imp.kind) f.imp.kind = to.imp.kind;
   if (!to.imp.kind && f.imp.kind) to.imp = { ...f.imp, vis: 0 };
+  if (to.aug.plane && !f.aug.plane) f.aug = { ...to.aug, fill: 0, vis: 0 };
+  if (!to.aug.plane && f.aug.plane) to.aug = { ...f.aug, vis: 0 };
   return f;
 }
 
@@ -572,7 +690,7 @@ function applyState(inst, s, tweening = false) {
     let op = L < 4 ? Math.min(Math.max(L + 1 - peel, 0), 1) : 1;
     if (L === 0) op *= s.ghostSkin;
     if (L === 3) op *= s.ghostMus;
-    if (m.name.startsWith('fat_') || m.name.startsWith('gland_')) { const sd = s[m.name.slice(-1)]; const isFat = m.name.startsWith('fat_'); if (sd.P < 0.008 || !sd[isFat ? 'fat' : 'gland'] || (s.ghostSkin < 0.9 && !(s.keepGland && !isFat)) || (peel < 0.3 && !(s.keepGland && !isFat && s.ghostSkin < 0.9))) op = 0; }
+    if (m.name.startsWith('fat_') || m.name.startsWith('gland_')) { const sd = s[m.name.slice(-1)]; const isFat = m.name.startsWith('fat_'); if (!isFat && s.glandShell === 0) op = 0; if (isFat && s.fatOp != null && sd.fat && sd.P > 0.008) op = s.fatOp; else if (sd.P < 0.008 || !sd[isFat ? 'fat' : 'gland'] || (s.ghostSkin < 0.9 && !(s.keepGland && !isFat)) || (peel < 0.3 && !(s.keepGland && !isFat && s.ghostSkin < 0.9))) op = 0; }
     setOpacity(m, op);
     if (m.material.uniforms) m.material.uniforms.uHi.value = s.hi.some((h) => m.name.startsWith(h)) ? 1 : 0;
   }
@@ -627,6 +745,20 @@ function applyState(inst, s, tweening = false) {
     inst.port.position.copy(inst.implant.position).addScaledVector(f, half + 0.001).add(new THREE.Vector3(0, -0.012, 0));
     inst.port.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), f);
   } else { setOpacity(inst.implant, 0); inst.port.visible = false; }
+  // 隆乳假體
+  for (const key of ['R', 'L']) {
+    const m = inst.augM[key]; const a = s.aug;
+    if (!a.plane || a.vis < 0.01) { setOpacity(m, 0); continue; }
+    const f = inst.regions[key].frame.f; const half = 0.006 + 0.012 * a.fill;
+    const off = a.plane === 'subglandular' ? half + 0.002 : a.plane === 'dual' ? half - 0.006 : half - 0.012;
+    m.geometry = inst.geoms[a['shape' + key] === 'tear' ? 'tear' : 'round'];
+    if (m.userData.outline) m.userData.outline.geometry = m.geometry;
+    m.position.copy(inst.pec[key]).addScaledVector(f, off); m.scale.set(0.05, 0.047, half);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), f);
+    m.material.userData.alwaysTransparent = true;
+    setOpacity(m, peel >= 0.5 || s.ghostSkin < 0.9 ? a.vis * 0.9 : 0);
+  }
+  updateGlandDetail(inst, s);
   // 吻合點
   inst.anast.position.copy(inst.anastPos); setOpacity(inst.anast, s.anast);
   inst.anast.scale.setScalar(1 + 0.35 * Math.sin(TIME.value * 4));

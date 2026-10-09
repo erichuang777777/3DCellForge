@@ -4,6 +4,14 @@ export const LAYER_NAMES = ['皮膚', '皮下脂肪', '乳腺', '肌肉', '骨�
 
 const MAST = { R: { P: 0, shape: 'flat', areola: false, defect: 0, gland: false, fat: false }, scars: ['mast_line'] };
 
+
+// 隆乳刀口(facing 座標,相對乳頭,公尺)
+const arc = (r, a0, a1, n = 16, cx = 0, cy = 0) => Array.from({ length: n + 1 }, (_, i) => { const t = a0 + ((a1 - a0) * i) / n; return [+(cx + r * Math.sin(t)).toFixed(4), +(cy + r * Math.cos(t)).toFixed(4)]; });
+const imfCut = (side, dashed) => ({ side, dashed, closed: false, pts: Array.from({ length: 11 }, (_, i) => { const x = -0.025 + 0.005 * i; return [x, +(-0.05 + 3 * x * x).toFixed(4)]; }) });
+const areolaCut = (side, dashed) => ({ side, dashed, closed: false, pts: arc(0.0185, Math.PI * 0.6, Math.PI * 1.4) });
+const AUG_SMALL = { R: { P: 0.045 }, L: { P: 0.045 } };
+const AUG_BIG = { R: { P: 0.07, upper: 0.55 }, L: { P: 0.07, upper: 0.55 } };
+
 export const SCENARIOS = [
   {
     id: 'bcs', tag: '手術方式', name: '保留乳房 vs 全切', short: '保留 vs 全切',
@@ -91,6 +99,37 @@ export const SCENARIOS = [
     pros: ['手術時間短,身上沒有額外供區傷口', '恢復較快', '可視需要分階段調整大小'],
     cons: ['感染、包膜攣縮、移位或破裂', '假體不是終身,日後可能需更換', '放射治療會增加併發症'],
     fit: ['身形偏瘦、不想要額外供區疤痕', '預期不需放療,或可分階段處理', '不適合或不想做大型自體手術']
+  },
+  {
+    id: 'aug', tag: '美容手術', name: '單純隆乳(假體)', short: '隆乳',
+    one: '在乳房組織後方放入假體增加體積。切口、放置層次與假體形狀都會影響外觀與恢復。',
+    steps: [
+      { title: '隆乳前', cam: 'front', text: '乳房體積較小。隆乳是把假體放在乳腺後方或胸大肌後方,讓乳房變大。', state: { ...AUG_SMALL } },
+      { title: '三種常見切口', cam: 'front', text: '虛線是常見切口:乳房下皺褶(最常用,視野最好)、乳暈下緣(疤痕藏在乳暈邊)、腋下(胸前沒有疤痕)。', state: { ...AUG_SMALL, scars: ['axR_d', 'axL_d'], custom: [imfCut('R', true), imfCut('L', true), areolaCut('R', true), areolaCut('L', true)] } },
+      { title: '放置層次:乳腺下', cam: 'oblique', peel: 3, text: '假體放在乳腺後方、胸大肌前方。恢復較快,但皮下組織薄的人容易看到假體邊緣。', state: { ...AUG_SMALL, aug: { plane: 'subglandular', fill: 1, vis: 1, shapeR: 'round', shapeL: 'round' } } },
+      { title: '放置層次:雙平面或胸大肌下', cam: 'oblique', peel: 3, text: '假體上半部由胸大肌覆蓋(圖中肌肉半透明),邊緣較自然、包膜攣縮較少;缺點是用力時乳房可能隨肌肉移動。', state: { ...AUG_SMALL, ghostMus: 0.4, hi: ['pecmaj'], aug: { plane: 'dual', fill: 1, vis: 1, shapeR: 'round', shapeL: 'round' } } },
+      { title: '假體形狀:圓形與水滴形', cam: 'front', peel: 3, text: '畫面左邊是圓形假體(上半部較飽滿),畫面右邊是水滴形假體(下半部較飽滿,較接近自然下垂)。', state: { ...AUG_SMALL, ghostMus: 0.4, aug: { plane: 'dual', fill: 1, vis: 1, shapeR: 'round', shapeL: 'tear' } } },
+      { title: '術後外觀', cam: 'oblique', text: '乳房體積增加,上半部較飽滿。圖中是乳房下皺褶切口,疤痕藏在下緣。', state: { ...AUG_BIG, aug: { plane: 'dual', fill: 1, vis: 1, shapeR: 'round', shapeL: 'round' }, custom: [imfCut('R', false), imfCut('L', false)] } }
+    ],
+    pros: ['一次手術,恢復約數週', '可選擇大小、形狀與切口位置', '也可改用自體脂肪移植,適合想小幅增加的人'],
+    cons: ['包膜攣縮、破裂、移位,假體並非終身,日後可能需要更換或取出', '乳房攝影需要特殊照法', '罕見的假體相關淋巴瘤(BIA-ALCL),與粗糙面假體較相關'],
+    fit: ['想增加乳房體積或改善不對稱', '乳房組織足夠覆蓋假體', '能接受定期追蹤']
+  },
+  {
+    id: 'gland', tag: '解剖構造', name: '乳腺構造與乳房緻密度', short: '乳腺構造',
+    one: '乳房內部由乳腺葉、乳管、小葉、脂肪與 Cooper 韌帶組成,淋巴主要流向腋下。',
+    steps: [
+      { title: '乳房外觀與分區', cam: 'oblique', text: '乳房常用四個象限描述位置,外上象限還延伸到腋下(腋尾)。外上象限乳腺組織最多,也是乳癌最常見的位置。', state: {} },
+      { title: 'Cooper 韌帶', cam: 'oblique', text: '從乳腺連到皮膚的纖維束(白色細線)撐起乳房。腫瘤牽拉這些韌帶時,皮膚可能出現凹陷,是觸診時要注意的徵象。', state: { ghostSkin: 0.32, glandShell: 0, glandDetail: 1, hiGland: 'cooper' } },
+      { title: '乳腺葉與乳管', cam: 'oblique', peel: 2, text: '乳腺約有 15 到 20 個葉,像輪輻一樣圍繞乳頭。每一葉都有一條乳管通到乳頭,靠近乳頭處膨大成乳竇。', state: { glandShell: 0, glandDetail: 1, hiGland: 'duct' } },
+      { title: '小葉與乳癌的起點', cam: 'glandZoom', peel: 2, text: '乳管末端是製造乳汁的小葉(終末乳管小葉單位)。大部分乳癌由這裡長出:從乳管長出的稱乳管癌,從小葉長出的稱小葉癌。', state: { glandShell: 0, glandDetail: 1, hiGland: 'lobule' } },
+      { title: '脂肪型乳房(緻密度 A/B)', cam: 'oblique', peel: 2, text: '乳腺組織少、脂肪多(黃色半透明)。乳房攝影上脂肪是暗的,腫瘤較容易看出來。', state: { glandShell: 0, glandDetail: 1, density: 0, fatOp: 0.4 } },
+      { title: '緻密型乳房(緻密度 C/D)', cam: 'oblique', peel: 2, text: '乳腺組織多。乳房攝影上乳腺與腫瘤都是白的,容易被遮住,常需加做超音波或 MRI。亞洲女性緻密型乳房比例較高。', state: { glandShell: 0, glandDetail: 1, density: 3, fatOp: 0.4 } },
+      { title: '淋巴引流與前哨淋巴結', cam: 'oblique', peel: 2, text: '乳房的淋巴大多流向腋下。最先接收淋巴的是前哨淋巴結(綠色,胸大肌已半透明),胸骨旁另有內乳淋巴結,手術時先檢查它,沒有轉移時通常可以不用清除整個腋下淋巴結。', state: { glandShell: 0, glandDetail: 1, lymph: 1, hiGland: 'sentinel', ghostMus: 0.35 } }
+    ],
+    pros: ['了解腫瘤位置與乳管、小葉的關係', '理解為什麼緻密型乳房需要加做超音波或 MRI', '理解前哨淋巴結切片的目的'],
+    cons: ['圖中乳腺葉、乳管與淋巴結為示意,數量與位置因人而異'],
+    fit: ['剛拿到影像或病理報告,想了解名詞的病人']
   }
 ];
 
@@ -103,10 +142,14 @@ export const END_STATES = [
   { id: 'omentum', label: '內下方 + 大網膜', from: ['omentum', 4] },
   { id: 'tram', label: '全切 + TRAM', from: ['tram', 5] },
   { id: 'diep', label: '全切 + DIEP', from: ['diep', 5] },
-  { id: 'implant', label: '全切 + 假體', from: ['implant', 4] }
+  { id: 'implant', label: '全切 + 假體', from: ['implant', 4] },
+  { id: 'aug0', label: '隆乳前', from: ['aug', 0] },
+  { id: 'aug', label: '隆乳後', from: ['aug', 5] },
+  { id: 'densA', label: '脂肪型乳房', from: ['gland', 4] },
+  { id: 'densD', label: '緻密型乳房', from: ['gland', 5] }
 ];
 
-export const COMPARE_DEFAULT = { bcs: ['bcs', 'mast'], ld: ['bcs', 'ld'], omentum: ['bcs', 'omentum'], tram: ['tram', 'diep'], diep: ['diep', 'implant'], implant: ['implant', 'diep'] };
+export const COMPARE_DEFAULT = { bcs: ['bcs', 'mast'], ld: ['bcs', 'ld'], omentum: ['bcs', 'omentum'], tram: ['tram', 'diep'], diep: ['diep', 'implant'], implant: ['implant', 'diep'], aug: ['aug0', 'aug'], gland: ['densA', 'densD'], sim: ['bcs', 'mast'] };
 
 // 點選結構的說明。key 以模型名稱前綴比對
 export const INFO = {
@@ -152,6 +195,14 @@ export const INFO = {
   'Lateral thoracic': { zh: '外側胸動脈', en: 'Lateral thoracic artery', text: '供應側胸壁與乳房外側的血管。', clin: '' },
   Subscapular: { zh: '肩胛下動脈', en: 'Subscapular artery', text: '胸背動脈的上游。', clin: '' },
   'gastro-omental': { zh: '胃網膜血管', en: 'Gastro-omental vessels', text: '沿胃大彎走的血管。', clin: '大網膜皮瓣的血管蒂。' },
+  duct: { zh: '乳管', en: 'Lactiferous duct', text: '把乳汁從小葉送到乳頭的管道,每一個乳腺葉一條。', clin: '乳管原位癌(DCIS)侷限在乳管內,尚未侵犯到管外。' },
+  sinus: { zh: '乳竇', en: 'Lactiferous sinus', text: '乳管靠近乳頭處的膨大部分。', clin: '' },
+  lobule: { zh: '小葉', en: 'Lobule (TDLU)', text: '乳管末端製造乳汁的腺泡群,稱終末乳管小葉單位。', clin: '大部分乳癌由這裡長出;小葉癌在影像上較不容易看到。' },
+  cooper: { zh: 'Cooper 韌帶', en: "Cooper's ligament", text: '連接乳腺與皮膚的纖維束,支撐乳房形狀。', clin: '腫瘤牽拉時皮膚會凹陷,是重要的理學檢查徵象。' },
+  node: { zh: '腋下淋巴結', en: 'Axillary lymph node', text: '乳房淋巴主要流向這裡。', clin: '淋巴結轉移與否影響分期與後續治療。' },
+  sentinel: { zh: '前哨淋巴結', en: 'Sentinel lymph node', text: '最先接收乳房淋巴的淋巴結。', clin: '前哨淋巴結切片沒有轉移時,通常可避免腋下淋巴結廓清,減少手臂水腫風險。' },
+  lymph: { zh: '淋巴管', en: 'Lymphatic vessel', text: '把組織液與免疫細胞帶到淋巴結的細管。', clin: '' },
+  aug: { zh: '隆乳假體', en: 'Breast implant', text: '矽膠或食鹽水假體,有圓形與水滴形。', clin: '需定期追蹤;包膜攣縮、破裂與罕見的 BIA-ALCL 是主要風險。' },
   anast: { zh: '血管吻合處', en: 'Microvascular anastomosis', text: '皮瓣血管與胸前血管接合的位置。', clin: '術後幾天需密切監測皮瓣血流。' }
 };
 
