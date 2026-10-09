@@ -7,10 +7,10 @@ const MAST = { R: { P: 0, shape: 'flat', areola: false, defect: 0, gland: false,
 
 // 隆乳刀口(facing 座標,相對乳頭,公尺)
 const arc = (r, a0, a1, n = 16, cx = 0, cy = 0) => Array.from({ length: n + 1 }, (_, i) => { const t = a0 + ((a1 - a0) * i) / n; return [+(cx + r * Math.sin(t)).toFixed(4), +(cy + r * Math.cos(t)).toFixed(4)]; });
-const imfCut = (side, dashed) => ({ side, dashed, closed: false, pts: Array.from({ length: 11 }, (_, i) => { const x = -0.025 + 0.005 * i; return [x, +(-0.05 + 3 * x * x).toFixed(4)]; }) });
+const imfCut = (side, dashed) => ({ side, dashed, closed: false, ref: 'imf', pts: Array.from({ length: 11 }, (_, i) => { const x = -0.025 + 0.005 * i; return [+x.toFixed(4), +(1.2 * x * x).toFixed(4)]; }) });
 const areolaCut = (side, dashed) => ({ side, dashed, closed: false, pts: arc(0.0185, Math.PI * 0.6, Math.PI * 1.4) });
 const AUG_SMALL = { R: { P: 0.045 }, L: { P: 0.045 } };
-const AUG_BIG = { R: { P: 0.07, upper: 0.55 }, L: { P: 0.07, upper: 0.55 } };
+const AUG_BIG = { R: { P: 0.07, upper: 0.55, ptosis: 0.5 }, L: { P: 0.07, upper: 0.55, ptosis: 0.5 } };
 
 export const SCENARIOS = [
   {

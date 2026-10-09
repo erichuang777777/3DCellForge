@@ -80,9 +80,6 @@ button { font: inherit; }
 .peel label b { color: var(--fg); }
 .peel input { width: 100%; accent-color: var(--accent); }
 .peel .ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
-.cmpbar { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap; max-width: calc(100% - 340px); }
-@media (max-width: 640px) { .cmpbar { position: static; max-width: none; padding: 8px 10px 0; } }
-.cmpbar select { font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); min-height: 34px; }
 .cmplabels { position: absolute; top: 56px; left: 0; right: 0; display: flex; pointer-events: none; }
 .cmplabels span { flex: 1; text-align: center; font-family: var(--font-display); font-weight: 700; color: var(--ink); font-size: 15px; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; background: var(--paper); }
@@ -160,17 +157,42 @@ details.doc .grid2 { margin-top: 8px; }
 #cmpTable tr.cur td { background: var(--accent-soft); }
 .tab.simtab { border-style: dashed; border-color: var(--accent); color: var(--accent); }
 .tab.simtab[aria-pressed="true"] { border-style: solid; color: var(--surface); }
+.prof summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; list-style: none; }
+.prof summary::-webkit-details-marker { display: none; }
+.prof summary::before { content: "▸"; color: var(--muted); }
+.prof[open] summary::before { content: "▾"; }
+.prof summary small { color: var(--muted); font-size: 12px; }
+.prof { display: block; }
+.prof > * + * { margin-top: 10px; }
+.rng { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
+.rng span { display: flex; justify-content: space-between; gap: 8px; }
+.rng b { color: var(--fg); font-weight: 500; }
+.rng input { width: 100%; accent-color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 999px; padding: 5px 12px; font-size: 13.5px; cursor: pointer; min-height: 34px; }
+.chip[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: var(--surface); font-weight: 700; }
+.chip:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.cmp h3 { font-size: 15px; margin-top: 4px; }
+.cmp .optrow { display: flex; flex-direction: column; gap: 4px; }
+.cmp .optrow span { font-size: 12px; color: var(--muted); }
+table.diff { min-width: 0; font-size: 13px; }
+table.diff th { font-size: 13px; }
+table.diff td { width: 50%; }
+.xsec { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.xsec svg { width: 100%; height: auto; background: var(--paper); border-radius: 8px; border: 1px solid var(--line); }
+.xsec figcaption { font-size: 12px; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>
 </head>
 <body>
+
 <div class="wrap">
   <div class="top">
     <div>
       <h1>乳房重建 3D 圖譜</h1>
       <p class="sub">用 3D 解剖模型看懂不同的乳癌手術與重建方式。拖曳旋轉、滾輪縮放,點選任何結構可看說明。</p>
     </div>
-    <span class="badge">v0.7 草稿・待醫師審核</span>
+    <span class="badge">v0.8 草稿・待醫師審核</span>
   </div>
 
   <nav class="tabs cats" id="cats" aria-label="分類"></nav>
@@ -187,10 +209,6 @@ details.doc .grid2 { margin-top: 8px; }
         </div>
       </div>
       <div class="cmplabels" id="cmplabels" hidden><span id="cmpA"></span><span id="cmpB"></span></div>
-      <div class="cmpbar" id="cmpbar" hidden>
-        <select id="selA" aria-label="左側情境"></select>
-        <select id="selB" aria-label="右側情境"></select>
-      </div>
       <div class="peel">
         <label for="peel">剝開到 <b id="peelName">皮膚</b></label>
         <input id="peel" type="range" min="0" max="4" step="1" value="0">
@@ -201,10 +219,46 @@ details.doc .grid2 { margin-top: 8px; }
     </div>
 
     <aside class="side">
+      <details class="panel prof" id="profPanel" open>
+        <summary><span class="eyebrow">病人條件</span> <b>先設定乳房外形</b> <small id="pfSum"></small></summary>
+        <p class="hint">所有情境、比較與腫瘤模擬都會套用這組設定。</p>
+        <div class="grid2">
+          <label for="pfCup">乳房大小<select id="pfCup">
+            <option value="A">A 罩杯</option><option value="B">B 罩杯</option><option value="C">C 罩杯</option><option value="D">D 罩杯</option><option value="E">E 罩杯以上</option><option value="custom">自行輸入體積</option>
+          </select></label>
+          <label for="pfMl" id="pfMlWrap" hidden>乳房體積(mL)<input id="pfMl" type="number" min="100" max="2000" step="10" inputmode="numeric"></label>
+          <label for="pfAge">年齡<select id="pfAge">
+            <option value="y">35 歲以下</option><option value="m">35–50 歲</option><option value="o">50–65 歲</option><option value="e">65 歲以上</option>
+          </select></label>
+          <label for="pfRatio">上下極比例<select id="pfRatio">
+            <option value="0.45">亞洲常見 45:55</option><option value="0.55">歐美偏好 55:45</option><option value="custom">自訂</option>
+          </select></label>
+        </div>
+        <label class="rng" for="pfPt"><span>下垂程度 <b id="pfPtV"></b></span><input id="pfPt" type="range" min="0" max="3" step="0.1"></label>
+        <label class="rng" for="pfUp" id="pfUpWrap" hidden><span>上極比例 <b id="pfUpV"></b></span><input id="pfUp" type="range" min="0.35" max="0.6" step="0.01"></label>
+        <label class="rng" for="pfFull"><span>上半部飽滿度 <b id="pfFullV"></b></span><input id="pfFull" type="range" min="0" max="1" step="0.05"></label>
+        <p class="hint" id="pfMeas" aria-live="polite"></p>
+      </details>
+      <section class="panel cmp" id="cmpPanel" hidden>
+        <span class="eyebrow">並排比較</span>
+        <h2>1. 選比較主題</h2>
+        <div class="chips" id="cmpPresets" role="group" aria-label="比較主題"></div>
+        <div id="cmpOpts"></div>
+        <p class="steptext" id="cmpText"></p>
+        <div class="tablewrap"><table class="diff" id="cmpDiff"></table></div>
+        <figure class="xsec" id="cmpSection" hidden></figure>
+        <details class="doc" id="cmpFree">
+          <summary>自選:左右各選一個術式結果</summary>
+          <div class="grid2">
+            <label for="selA">左側<select id="selA"></select></label>
+            <label for="selB">右側<select id="selB"></select></label>
+          </div>
+        </details>
+      </section>
       <section class="panel sim" id="simPanel" hidden>
         <span class="eyebrow">個人化模擬</span>
         <h2>模擬我的腫瘤</h2>
-        <p class="hint">依影像或病理報告輸入。位置以「面對病人」的鐘面表示,也可以直接點下方圖。</p>
+        <p class="hint">依影像或病理報告輸入。位置以「面對病人」的鐘面表示,也可以直接點下方圖。乳房大小、下垂與上下極比例請在上方「病人條件」設定。</p>
         <div class="row">
           <span class="lbl">側別</span>
           <div class="ctlgroup" role="group" aria-label="側別" id="simSide">
@@ -217,10 +271,6 @@ details.doc .grid2 { margin-top: 8px; }
           <label for="simHour">鐘點<select id="simHour"></select></label>
           <label for="simDist">距乳頭(cm)<input id="simDist" type="number" min="0" max="12" step="0.5" inputmode="decimal"></label>
           <label for="simSize">腫瘤大小(cm)<input id="simSize" type="number" min="0.3" max="10" step="0.1" inputmode="decimal"></label>
-          <label for="simCup">乳房大小<select id="simCup">
-            <option value="A">A 罩杯</option><option value="B">B 罩杯</option><option value="C">C 罩杯</option><option value="D">D 罩杯</option><option value="E">E 罩杯以上</option><option value="custom">自行輸入體積</option>
-          </select></label>
-          <label for="simMl" id="simMlWrap" hidden>乳房體積(mL)<input id="simMl" type="number" min="100" max="2000" step="10" inputmode="numeric"></label>
         </div>
         <div class="result" id="simResult" aria-live="polite"></div>
         <div class="row">
@@ -293,7 +343,7 @@ details.doc .grid2 { margin-top: 8px; }
     </ul>
     <div class="review">
       <span>審核醫師:__________</span>
-      <span>版本:v0.7 草稿</span>
+      <span>版本:v0.8 草稿</span>
       <span>審核日期:__________</span>
     </div>
     <p class="note">本頁為衛教用示意,不是個人治療建議,也不代表手術後的實際外觀。實際選擇請依主治醫師評估。</p>

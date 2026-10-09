@@ -110,7 +110,7 @@ export function analyze(input, cfg = CONFIG) {
 // 刀口幾何:回傳數條折線,每條為 facing 座標點陣列;closed 表示封閉
 export function incisionPaths(id, ctx) {
   const { X: tx, Y: ty, exR, Ls, sc } = ctx; // exR 單位 cm
-  const e = exR / 100; const Ra = 0.017; const Yf = -0.052 * sc;
+  const e = exR / 100; const Ra = 0.017; const Yf = ctx.Yf ?? -0.052 * sc; // Yf:乳房下皺褶相對乳頭的高度
   const d = Math.hypot(tx, ty); const a = Math.atan2(tx, ty); // 0 = 上方
   const arc = (r, a0, a1, n = 24, cx = 0, cy = 0) => Array.from({ length: n + 1 }, (_, i) => { const t = a0 + ((a1 - a0) * i) / n; return [cx + r * Math.sin(t), cy + r * Math.cos(t)]; });
   const circle = (r) => ({ pts: arc(r, 0, Math.PI * 2, 40), closed: true });

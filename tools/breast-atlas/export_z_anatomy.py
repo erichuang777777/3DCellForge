@@ -98,6 +98,21 @@ me=bpy.data.meshes.new('skin'); bm.to_mesh(me); bm.free()
 ob=bpy.data.objects.new('skin', me); coll.objects.link(ob)
 m=ob.modifiers.new('s','SUBSURF'); m.levels=2; m.render_levels=2
 meta['parts']['skin']={'layer':'skin','src':skin_src}
+# Upper-arm skin as its own mesh (covers the humerus without changing the trunk skin merge)
+arm_src=[f'{t}.{s}' for t in ['Anterior region of arm','Posterior region of arm'] for s in LR]
+bm=mesh_from(arm_src)
+bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.004)
+bm.normal_update()
+for f in bm.faces:
+    c=f.calc_center_median()
+    # Blender coords are Z-up; orient normals away from the upper-arm axis
+    axis=mathutils.Vector((0.18 if c.x>0 else -0.18, 0.0, c.z))
+    if f.normal.dot(c-axis)<0: f.normal_flip()
+bm.normal_update()
+me=bpy.data.meshes.new('skin_arm'); bm.to_mesh(me); bm.free()
+ob=bpy.data.objects.new('skin_arm', me); coll.objects.link(ob)
+m=ob.modifiers.new('s','SUBSURF'); m.levels=1; m.render_levels=1
+meta['parts']['skin_arm']={'layer':'skin','src':arm_src}
 for o in coll.objects:
     for p in o.data.polygons: p.use_smooth=True
 # select and export

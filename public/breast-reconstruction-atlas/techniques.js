@@ -4,6 +4,7 @@
 export const CATS = [
   { id: 'know', zh: '認識乳房' },
   { id: 'surgery', zh: '手術方式' },
+  { id: 'axilla', zh: '腋下淋巴' },
   { id: 'partial', zh: '部分重建' },
   { id: 'implant', zh: '假體重建' },
   { id: 'abdo', zh: '自體:腹部' },
@@ -160,6 +161,8 @@ export const TECHS = [
 ];
 export const TECH_BY_ID = Object.fromEntries(TECHS.map((t) => [t.id, t]));
 export const DONORS = D;
+// 供區縫合後的疤痕(比較模式用)
+export function donorScar(id) { const d = D[TECH_BY_ID[id].donor]; return [{ pts: seam(d.c, d.e1, d.r[0] * 0.92), axis: d.axis, n: d.normal }]; }
 
 // ---- 由術式資料自動產生情境步驟 ----
 const SSM = { R: { P: 0.012, shape: 'natural', areola: false, defect: 0, gland: false, fat: false } };
@@ -172,14 +175,15 @@ function techScenario(t) {
   const donorScar = [{ pts: seam(d.c, d.e1, d.r[0] * 0.92), axis: d.axis, n: d.normal }];
   const woundAt = { c: d.c, r: d.wound };
   const free = t.transfer === 'free'; const partial = !!t.zone;
-  const gf = (tt, vis = 1) => ({ tech: t.id, t: tt, vis });
+  const gf = (tt, vis = 1, arc = 0) => ({ tech: t.id, t: tt, vis, arc });
   const steps = [];
   if (partial) {
     const cut = { tq: t.zone, cut: 1, R: { defect: 0.018, dq: t.zone } };
     steps.push({ title: `${zoneZh[t.zone]}缺損`, cam: 'oblique', peel: 2, text: `保留乳房手術切除${zoneZh[t.zone]}的腫瘤後留下缺損(紅色腔室),以下用${t.zh}填補。`, state: { ...cut } });
     steps.push({ title: `設計${d.zh}皮瓣`, cam: d.cam, text: `在${d.zh}畫出皮瓣範圍(虛線)。${t.one}`, state: { ...cut, wscars: design } });
     steps.push({ title: '穿通枝血管', cam: d.cam, peel: 1, text: t.vesselText, state: { ...cut, vessels: t.vessels, perfAt: t.perf, woundAt, wound: 0 } });
-    steps.push({ title: '旋轉填補缺損', cam: 'oblique', text: '皮瓣以穿通枝為軸旋轉或推進,經皮下送到缺損處。', state: { ...cut, ghostSkin: 0.4, perfAt: t.perf, woundAt, wound: 1, gf: gf(1) }, dur: 2400 });
+    steps.push({ title: '掀起皮瓣', cam: 'oblique', text: '沿虛線切開,把皮膚脂肪連同穿通枝(紅點)一起掀起,穿通枝就是皮瓣的旋轉軸。綠色點線是接下來的旋轉路徑。', state: { ...cut, ghostSkin: 0.55, perfAt: t.perf, woundAt, wound: 1, gf: gf(0.15, 1, 1) }, dur: 1600 });
+    steps.push({ title: '旋轉填補缺損', cam: 'oblique', text: '皮瓣以穿通枝為軸像螺旋槳一樣轉動(或推進),經皮下送進缺損處,去表皮後埋在乳房皮膚底下。', state: { ...cut, ghostSkin: 0.55, perfAt: t.perf, woundAt, wound: 1, gf: gf(1, 1, 1) }, dur: 3400 });
     steps.push({ title: '術後外觀', cam: 'oblique', text: `乳房${zoneZh[t.zone]}的凹陷得到填補,供區疤痕在${d.zh}。`, state: { tq: t.zone, cut: 1, R: { defect: 0.003, dq: t.zone }, gf: gf(1), wscars: donorScar } });
     steps.push({ title: '供區疤痕', cam: d.cam, text: `供區直接縫合,疤痕在${d.zh}。`, state: { tq: t.zone, cut: 1, R: { defect: 0.003, dq: t.zone }, gf: gf(1), wscars: donorScar } });
   } else {
@@ -199,10 +203,12 @@ function techScenario(t) {
 
 // ---- 手寫專題情境 ----
 const nipRing = (r, side = 'R', dashed = false) => ({ side, dashed, closed: true, pts: Array.from({ length: 25 }, (_, i) => { const t = (i / 24) * Math.PI * 2; return [r4(r * Math.sin(t)), r4(r * Math.cos(t))]; }) });
-const line = (pts, side = 'R', dashed = false) => ({ side, dashed, closed: false, pts });
-const wiseDesign = (side) => [nipRing(0.021, side, true), line([[-0.012, -0.02], [-0.035, -0.058], [-0.085, -0.052]], side, true), line([[0.012, -0.02], [0.035, -0.058], [0.085, -0.052]], side, true), line([[-0.085, -0.052], [-0.04, -0.072], [0, -0.075], [0.04, -0.072], [0.085, -0.052]], side, true)];
-const invT = (side) => [nipRing(0.019, side), line([[0, -0.019], [0, -0.05]], side), line([[-0.065, -0.045], [-0.03, -0.052], [0, -0.054], [0.03, -0.052], [0.065, -0.045]], side)];
-const BIG = { R: { P: 0.08, ptosis: 1.8, sc: 1.08 } };
+const line = (pts, side = 'R', dashed = false, ref = null) => ({ side, dashed, closed: false, pts, ref });
+// 乳房下皺褶上的弧線(Y 相對皺褶)
+const imfLine = (w, side = 'R', dashed = false, cx = 0) => line(Array.from({ length: 9 }, (_, i) => { const x = -w + (2 * w * i) / 8; return [r4(cx + x), r4(1.2 * x * x)]; }), side, dashed, 'imf');
+const wiseDesign = (side) => [nipRing(0.021, side, true), line([[-0.012, -0.02], [-0.035, -0.058], [-0.085, -0.052]], side, true), line([[0.012, -0.02], [0.035, -0.058], [0.085, -0.052]], side, true), imfLine(0.085, side, true)];
+const invT = (side) => [nipRing(0.019, side), line([[0, -0.019], [0, -0.05]], side), imfLine(0.065, side)];
+const BIG = { R: { P: 0.08, pt: 2.3, sc: 1.08 } };
 
 const MAST_TYPES = {
   id: 'masttypes', cat: 'surgery', tag: '手術方式', name: '全切的不同方式', short: '全切方式',
@@ -211,8 +217,8 @@ const MAST_TYPES = {
     { title: '傳統全切', cam: 'oblique', text: '切除乳房組織、乳頭乳暈與部分皮膚,留下橫向疤痕。若不立即重建,胸前是平的。', state: { R: { P: 0, shape: 'flat', areola: false, gland: false, fat: false }, scars: ['mast_line'] } },
     { title: '皮膚保留式(SSM):切口', cam: 'oblique', text: '只在乳暈處切一圈(虛線),從這裡切除乳腺與乳頭乳暈,保留大部分皮膚。', state: { custom: [nipRing(0.02, 'R', true)] } },
     { title: '皮膚保留式:立即重建後', cam: 'oblique', text: '保留的皮膚包住假體或皮瓣,外形自然。原乳暈處是一圈疤痕或皮島,乳頭可日後重建。', state: { R: { P: 0.06, areola: false, gland: false }, paddle: 1, paddleR: [0.021, 0.021, 0.03] } },
-    { title: '乳頭保留式(NSM):切口', cam: 'oblique', text: '保留乳頭乳暈,切口常放在乳房下皺褶或外側。腫瘤離乳頭夠遠、乳頭下方切緣乾淨時才適合。', state: { custom: [line([[-0.03, -0.052], [-0.01, -0.058], [0.01, -0.058], [0.03, -0.052]], 'R', true)] } },
-    { title: '乳頭保留式:立即重建後', cam: 'oblique', text: '乳頭乳暈保留,疤痕藏在乳房下緣。乳頭感覺通常會減少,也可能部分壞死。', state: { R: { P: 0.06, gland: false }, custom: [line([[-0.03, -0.052], [-0.01, -0.058], [0.01, -0.058], [0.03, -0.052]], 'R')] } },
+    { title: '乳頭保留式(NSM):切口', cam: 'oblique', text: '保留乳頭乳暈,切口常放在乳房下皺褶或外側。腫瘤離乳頭夠遠、乳頭下方切緣乾淨時才適合。', state: { custom: [imfLine(0.03, 'R', true)] } },
+    { title: '乳頭保留式:立即重建後', cam: 'oblique', text: '乳頭乳暈保留,疤痕藏在乳房下緣。乳頭感覺通常會減少,也可能部分壞死。', state: { R: { P: 0.06, gland: false }, custom: [imfLine(0.03, 'R')] } },
     { title: '縮皮式(Wise pattern):設計', cam: 'oblique', text: '乳房大或下垂時,用倒 T 形(鑰匙孔)設計切除多餘皮膚,讓重建後的乳房大小與位置更好。', state: { ...BIG, custom: wiseDesign('R') } },
     { title: '縮皮式:重建後', cam: 'oblique', text: '乳房縮小上提,疤痕呈倒 T。下方的真皮可做成吊帶覆蓋假體。對側常一起做縮乳以求對稱。', state: { R: { P: 0.058, lift: 0.01, ptosis: 0.5, gland: false }, custom: invT('R') } },
     { title: 'Goldilocks', cam: 'oblique', text: '同樣用 Wise 切口,但把下方原本要丟掉的皮膚脂肪留下來,自己捲成一個小乳房,不用假體也不用其他部位的皮瓣。適合乳房大、體重較重或共病多的病人。', state: { R: { P: 0.034, lift: 0.004, ptosis: 0.6, areola: false, gland: false }, custom: invT('R') } },
@@ -272,11 +278,11 @@ const SYMM = {
   id: 'symm', cat: 'finish', tag: '後續與對稱', name: '對側對稱手術', short: '對側對稱',
   one: '單側重建後,常在對側做縮乳、提乳或隆乳,讓兩邊大小與位置相近。',
   steps: [
-    { title: '重建後兩側不對稱', cam: 'front', text: '畫面左邊(右乳)重建後較挺、較高;畫面右邊(左乳)較大且下垂。', state: { R: { P: 0.056, lift: 0.008, ptosis: 0.5, areola: true }, L: { P: 0.074, ptosis: 1.8 } } },
-    { title: '對側縮乳:設計', cam: 'front', text: '在對側用倒 T 形設計切除多餘組織與皮膚。', state: { R: { P: 0.056, lift: 0.008, ptosis: 0.5 }, L: { P: 0.074, ptosis: 1.8 }, custom: wiseDesign('L') } },
+    { title: '重建後兩側不對稱', cam: 'front', text: '畫面左邊(右乳)重建後較挺、較高;畫面右邊(左乳)較大且下垂。', state: { R: { P: 0.056, lift: 0.008, ptosis: 0.5, areola: true }, L: { P: 0.074, pt: 2.3 } } },
+    { title: '對側縮乳:設計', cam: 'front', text: '在對側用倒 T 形設計切除多餘組織與皮膚。', state: { R: { P: 0.056, lift: 0.008, ptosis: 0.5 }, L: { P: 0.074, pt: 2.3 }, custom: wiseDesign('L') } },
     { title: '對側縮乳:術後', cam: 'front', text: '兩側大小與高度接近,對側留下倒 T 疤痕。', state: { R: { P: 0.056, lift: 0.008, ptosis: 0.5 }, L: { P: 0.058, lift: 0.008, ptosis: 0.55 }, custom: invT('L') } },
     { title: '對側提乳', cam: 'front', text: '若只是下垂、大小相近,可只做提乳,疤痕在乳暈周圍與垂直向下。', state: { R: { P: 0.056, lift: 0.008, ptosis: 0.5 }, L: { P: 0.064, lift: 0.009, ptosis: 0.5 }, custom: [nipRing(0.019, 'L'), line([[0, -0.019], [0, -0.05]], 'L')] } },
-    { title: '對側隆乳', cam: 'front', text: '若對側較小,可放假體增加體積,疤痕在乳房下皺褶。', state: { R: { P: 0.06, lift: 0.004, ptosis: 0.6 }, L: { P: 0.06, upper: 0.5, ptosis: 0.7 }, custom: [line([[-0.025, -0.05], [0, -0.052], [0.025, -0.05]], 'L')] } }
+    { title: '對側隆乳', cam: 'front', text: '若對側較小,可放假體增加體積,疤痕在乳房下皺褶。', state: { R: { P: 0.06, lift: 0.004, ptosis: 0.6 }, L: { P: 0.06, upper: 0.5, ptosis: 0.7 }, custom: [imfLine(0.025, 'L')] } }
   ],
   pros: ['兩側對稱,穿衣較容易', '可與重建同時或之後做'], cons: ['健側也會有疤痕與手術風險', '健側乳房的影像追蹤可能受影響'], fit: ['單側重建後兩側差異明顯'],
   meta: { src: '對側乳房', muscle: '否', vessel: '—', mode: '縮乳、提乳或隆乳', scar: '對側乳房', risk: '健側也有手術風險' }
@@ -286,27 +292,61 @@ const SYMM = {
 const AX_SMALL = (dashed) => ({ pts: [[-0.146, 1.305, 0.05], [-0.152, 1.3, 0.036], [-0.157, 1.296, 0.022]], axis: [0, 0], n: [-0.8, 0, 0.5], dashed });
 const AX_LONG = { pts: [[-0.138, 1.312, 0.062], [-0.148, 1.302, 0.044], [-0.156, 1.296, 0.026], [-0.162, 1.29, 0.006], [-0.165, 1.284, -0.012]], axis: [0, 0], n: [-0.9, 0, 0.3] };
 const injRing = { side: 'R', dashed: true, closed: true, pts: Array.from({ length: 13 }, (_, i) => { const t = (i / 12) * Math.PI * 2; return [r4(0.022 * Math.sin(t)), r4(0.022 * Math.cos(t))]; }) };
-const AXILLA = {
-  id: 'axilla', cat: 'surgery', tag: '手術方式', name: '前哨淋巴結切片與腋下淋巴結廓清', short: '前哨與廓清',
-  one: '乳癌最常先轉移到腋下淋巴結。前哨淋巴結切片只取最先接收淋巴的 1 到 3 顆;廓清則切除 Level I、II 的淋巴結。',
+const AXV = ['Axillary vein.r', 'Axillary artery.r'];
+const AX_NERVES = ['Axillary vein.r', 'Long thoracic nerve.r', 'Thoracodorsal nerve.r', 'Thoracodorsal artery.r', 'Medial pectoral nerve.r', 'Lateral pectoral nerve.r'];
+export const AX = { AX_SMALL, AX_LONG, injRing, AXV };
+const AX_ANAT = {
+  id: 'axanat', cat: 'axilla', tag: '腋下淋巴', name: '腋下淋巴結分區與淋巴流向', short: '分區與流向',
+  one: '乳房的淋巴大部分流向腋下。以胸小肌為界把腋下淋巴結分成三區,手術範圍就是依這個分區描述。',
   steps: [
-    { title: '腋下淋巴結分區', cam: 'axilla', peel: 3, text: '以胸小肌(高亮)為界:外側為 Level I(綠),後方為 Level II(橙),內上方鎖骨下為 Level III(紅);胸骨旁為內乳淋巴結(紫)。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostMus: 0.3, nodes: 1, hi: ['pecmin'] } },
-    { title: '注射追蹤劑', cam: 'oblique', text: '在乳暈周圍注射放射性同位素、藍染劑或螢光劑(ICG)。追蹤劑沿淋巴管流到第一站,也就是前哨淋巴結(藍色)。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostSkin: 0.5, nodes: 1, dye: 1, custom: [injRing] }, dur: 3200 },
-    { title: '找到前哨淋巴結', cam: 'axilla', text: '在腋下皮膚皺褶處切一個 2 到 3 公分的小切口(虛線),用 γ 探頭偵測放射性,並找出被染色或發螢光的淋巴結。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostSkin: 0.4, nodes: 1, dye: 1, probe: 1, hiNode: 'sentinel', wscars: [AX_SMALL(true)] } },
-    { title: '取出前哨淋巴結', cam: 'axilla', peel: 3, text: '通常取出 1 到 3 顆淋巴結送病理檢查。沒有轉移時,一般就不需要再清除腋下淋巴結。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostMus: 0.3, nodes: 1, dye: 1, slnGone: 1, wscars: [AX_SMALL(false)] } },
-    { title: '前哨切片術後', cam: 'axilla', text: '只留下腋下小疤痕。手臂淋巴水腫的風險遠低於廓清,但仍可能有腋下或上臂內側麻木。部分低風險病人可依最新研究與醫師討論是否省略切片。', state: { nodes: 0, slnGone: 1, wscars: [AX_SMALL(false)] } },
-    { title: '腋下淋巴結廓清範圍', cam: 'axilla', peel: 3, text: '淋巴結已確認轉移、或特定情況下,會清除 Level I 與 II 的淋巴結與周圍脂肪(高亮);Level III 只有在受侵犯時才清除。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostMus: 0.3, nodes: 1, hiNode: 'I_II', hi: ['pecmin'] } },
-    { title: '保護重要神經血管', cam: 'axilla', peel: 3, text: '清除時保留腋靜脈(藍)、長胸神經(黃,支配前鋸肌,受傷會造成翼狀肩胛)、胸背神經血管(支配背闊肌)與胸肌神經。上臂內側的感覺神經常被犧牲,術後會麻木。', state: { ghostMus: 0.3, nodes: 1, gI: 1, gII: 1, vessels: ['Axillary vein.r', 'Long thoracic nerve.r', 'Thoracodorsal nerve.r', 'Thoracodorsal artery.r', 'Medial pectoral nerve.r', 'Lateral pectoral nerve.r'], vesselsOnly: ['Axillary vein.r', 'Axillary artery.r', 'Long thoracic nerve.r', 'Thoracodorsal nerve.r', 'Thoracodorsal artery.r'] }, dur: 2200 },
-    { title: '廓清術後與引流管', cam: 'axilla', text: '切口較長,通常放置引流管數天。風險包括手臂淋巴水腫、血清腫、肩膀活動受限與麻木;術後需做手臂復健運動。', state: { nodes: 0, gI: 1, gII: 1, drain: 1, wscars: [AX_LONG] } },
-    { title: '新輔助治療後:標記淋巴結', cam: 'axilla', peel: 3, text: '化療前在已證實轉移的淋巴結放置標記夾(銀色)。化療後手術時,同時取出標記的淋巴結與前哨淋巴結(標靶式腋下手術),以判斷是否還需廓清。', state: { vesselsOnly: ['Axillary vein.r', 'Axillary artery.r'], ghostMus: 0.3, nodes: 1, clip: 1, hiNode: 'clip' } }
+    { title: '腋下淋巴結分區', cam: 'axilla', peel: 3, text: '以胸小肌(高亮)為界:外側為 Level I(綠),後方為 Level II(橙),內上方鎖骨下為 Level III(紅);胸骨旁為內乳淋巴結(紫)。', state: { vesselsOnly: AXV, ghostMus: 0.3, nodes: 1, hi: ['pecmin'] } },
+    { title: '淋巴從乳房流向腋下', cam: 'oblique', text: '乳房的淋巴液經皮下與乳腺內的淋巴管(藍色流動點)流向腋下,先到達的第一站稱為前哨淋巴結。少部分(多為內側)會流向胸骨旁的內乳淋巴結。', state: { vesselsOnly: AXV, ghostSkin: 0.5, nodes: 1, dye: 1, flow: 1 }, dur: 2400 },
+    { title: '內乳淋巴結', cam: 'front', peel: 3, text: '胸骨兩旁、沿內乳血管分布的淋巴結(紫)。一般手術不會切除,影像上有轉移時可能以放射治療處理。', state: { vesselsOnly: ['Internal thoracic artery.r'], ghostMus: 0.3, nodes: 1 } }
   ],
-  pros: ['前哨切片:傷口小、淋巴水腫風險低', '廓清:控制腋下病灶、提供完整分期資訊'],
-  cons: ['廓清:手臂淋巴水腫、血清腫、肩膀活動受限、上臂內側麻木', '前哨切片:少數會偽陰性,或需二次手術'],
-  fit: ['前哨切片:臨床上腋下淋巴結看起來正常', '廓清:淋巴結已確認轉移且符合廓清條件', '新輔助治療後:依治療前後狀況選擇方式'],
-  meta: { src: '腋下淋巴結', muscle: '否', vessel: '保留腋靜脈與神經', mode: '前哨切片或廓清', scar: '腋下', risk: '淋巴水腫、麻木' }
+  pros: ['了解分區,較容易看懂病理報告上的淋巴結描述'], cons: ['分區為示意,實際淋巴結數目與位置因人而異'], fit: ['所有需要腋下手術的病人']
+};
+const SLNB = {
+  id: 'slnb', cat: 'axilla', tag: '腋下淋巴', name: '前哨淋巴結切片', short: '前哨切片',
+  one: '注射追蹤劑找出最先接收乳房淋巴的 1 到 3 顆淋巴結,取出化驗,判斷腋下有沒有轉移。',
+  steps: [
+    { title: '注射追蹤劑', cam: 'oblique', text: '在乳暈周圍(虛線)注射放射性同位素、藍染劑或螢光劑(ICG)。', state: { vesselsOnly: AXV, ghostSkin: 0.5, nodes: 1, dye: 0.08, flow: 1, custom: [injRing] } },
+    { title: '追蹤劑沿淋巴管流動', cam: 'oblique', text: '追蹤劑沿淋巴管(藍色流動點)流向腋下,停在第一站,也就是前哨淋巴結(變成藍色)。通常需要數分鐘到數小時。', state: { vesselsOnly: AXV, ghostSkin: 0.5, nodes: 1, dye: 1, flow: 1, hiNode: 'sentinel', custom: [injRing] }, dur: 4200 },
+    { title: '腋下小切口與 γ 探頭', cam: 'axilla', text: '在腋下皮膚皺褶處切一個 2 到 3 公分的小切口(虛線),用 γ 探頭偵測放射性,並找出被染色或發螢光的淋巴結。', state: { vesselsOnly: AXV, ghostSkin: 0.4, nodes: 1, dye: 1, flow: 1, probe: 1, hiNode: 'sentinel', wscars: [AX_SMALL(true)] } },
+    { title: '取出前哨淋巴結', cam: 'axilla', peel: 3, text: '把前哨淋巴結(藍色)從切口取出送病理檢查,通常 1 到 3 顆;其他淋巴結保留在原位。', state: { vesselsOnly: AXV, ghostMus: 0.3, nodes: 1, dye: 1, slnGone: 1, wscars: [AX_SMALL(false)] }, dur: 2600 },
+    { title: '術後', cam: 'axilla', text: '只留下腋下小疤痕。手臂淋巴水腫的風險遠低於廓清,但仍可能有腋下或上臂內側麻木。部分低風險病人可依最新研究與醫師討論是否省略切片。', state: { nodes: 0, slnGone: 1, wscars: [AX_SMALL(false)] } }
+  ],
+  pros: ['傷口小、恢復快', '淋巴水腫風險低', '沒有轉移時可免除廓清'],
+  cons: ['少數偽陰性', '術中或術後病理有轉移時,可能需要再處理'],
+  fit: ['臨床上腋下淋巴結看起來正常', '新輔助治療後依情況使用'],
+  meta: { src: '前哨淋巴結 1–3 顆', muscle: '否', vessel: '—', mode: '追蹤劑 + γ 探頭', scar: '腋下 2–3 cm', risk: '麻木、少數偽陰性' }
+};
+const ALND = {
+  id: 'alnd', cat: 'axilla', tag: '腋下淋巴', name: '腋下淋巴結廓清', short: '腋下廓清',
+  one: '切除 Level I、II 的淋巴結與周圍脂肪組織,用於已確認轉移且符合條件的病人。',
+  steps: [
+    { title: '廓清範圍', cam: 'axilla', peel: 3, text: '清除 Level I 與 II 的淋巴結與周圍脂肪(高亮);Level III 只有在受侵犯時才清除。', state: { vesselsOnly: AXV, ghostMus: 0.3, nodes: 1, hiNode: 'I_II', hi: ['pecmin'] } },
+    { title: '保護重要神經血管', cam: 'axilla', peel: 3, text: '保留腋靜脈(藍)、長胸神經(黃,支配前鋸肌,受傷會造成翼狀肩胛)、胸背神經血管(支配背闊肌)與胸肌神經。上臂內側的感覺神經常被犧牲,術後會麻木。', state: { ghostMus: 0.3, nodes: 1, hiNode: 'I_II', vessels: AX_NERVES, vesselsOnly: [...AXV, 'Long thoracic nerve.r', 'Thoracodorsal nerve.r', 'Thoracodorsal artery.r'] } },
+    { title: '整塊取出淋巴結', cam: 'axilla', peel: 3, text: 'Level I、II 的淋巴結連同脂肪整塊取出(往切口方向移出),神經血管留在原位。', state: { ghostMus: 0.3, nodes: 1, gI: 1, gII: 1, vessels: AX_NERVES, vesselsOnly: [...AXV, 'Long thoracic nerve.r', 'Thoracodorsal nerve.r', 'Thoracodorsal artery.r'] }, dur: 3000 },
+    { title: '術後與引流管', cam: 'axilla', text: '切口較長,通常放置引流管數天。風險包括手臂淋巴水腫、血清腫、肩膀活動受限與麻木;術後需做手臂復健運動。', state: { nodes: 0, gI: 1, gII: 1, drain: 1, wscars: [AX_LONG] } }
+  ],
+  pros: ['控制腋下病灶', '提供完整分期資訊'],
+  cons: ['手臂淋巴水腫', '血清腫、肩膀活動受限', '上臂內側麻木'],
+  fit: ['淋巴結已確認轉移且符合廓清條件', '前哨淋巴結找不到或不適合切片'],
+  meta: { src: 'Level I、II 淋巴結與脂肪', muscle: '否', vessel: '保留腋靜脈與神經', mode: '整塊切除', scar: '腋下較長', risk: '淋巴水腫、血清腫' }
+};
+const TAD = {
+  id: 'tad', cat: 'axilla', tag: '腋下淋巴', name: '新輔助治療後:標靶式腋下手術', short: '標記淋巴結',
+  one: '化療前在已證實轉移的淋巴結放標記夾;化療後手術時,把標記的淋巴結和前哨淋巴結一起取出。',
+  steps: [
+    { title: '化療前放標記夾', cam: 'axilla', peel: 3, text: '在已證實轉移的淋巴結放置標記夾(銀色)。', state: { vesselsOnly: AXV, ghostMus: 0.3, nodes: 1, clip: 1, hiNode: 'clip' } },
+    { title: '化療後找前哨與標記淋巴結', cam: 'axilla', peel: 3, text: '手術時用追蹤劑找前哨淋巴結,另以定位方法找出放了標記夾的淋巴結。', state: { vesselsOnly: AXV, ghostMus: 0.3, nodes: 1, clip: 1, dye: 1, hiNode: 'clip' } },
+    { title: '兩者一起取出', cam: 'axilla', peel: 3, text: '同時取出標記的淋巴結與前哨淋巴結(標靶式腋下手術),依病理結果判斷是否還需要廓清。', state: { vesselsOnly: AXV, ghostMus: 0.3, nodes: 1, clip: 1, dye: 1, slnGone: 1, clipGone: 1, wscars: [AX_SMALL(false)] }, dur: 2800 }
+  ],
+  pros: ['化療反應好時,可能免除廓清', '比單做前哨切片更準確'], cons: ['需要化療前放夾與術前定位'], fit: ['化療前淋巴結有轉移,化療後臨床反應良好'],
+  meta: { src: '標記淋巴結 + 前哨淋巴結', muscle: '否', vessel: '—', mode: '標記夾 + 追蹤劑', scar: '腋下小切口', risk: '定位失敗時需再處理' }
 };
 
-export const EXTRA_SCENARIOS = [AXILLA, MAST_TYPES, IMPLANT_PLANES, FAT_GRAFT, NIPPLE, SYMM, ...TECHS.map(techScenario)];
+export const EXTRA_SCENARIOS = [AX_ANAT, SLNB, ALND, TAD, MAST_TYPES, IMPLANT_PLANES, FAT_GRAFT, NIPPLE, SYMM, ...TECHS.map(techScenario)];
 
 // 模擬器 Level III:依位置推薦的部分重建術式
 export const ZONE_L3 = {
