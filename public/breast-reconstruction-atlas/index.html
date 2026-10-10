@@ -192,7 +192,7 @@ table.diff td { width: 50%; }
       <h1>乳房重建 3D 圖譜</h1>
       <p class="sub">用 3D 解剖模型看懂不同的乳癌手術與重建方式。拖曳旋轉、滾輪縮放,點選任何結構可看說明。</p>
     </div>
-    <span class="badge">v0.10 草稿・待醫師審核</span>
+    <span class="badge">v0.11 草稿・待醫師審核</span>
   </div>
 
   <nav class="tabs cats" id="cats" aria-label="分類"></nav>
@@ -240,7 +240,9 @@ table.diff td { width: 50%; }
             <label for="pfSNN">胸骨上切跡到乳頭(cm)<input id="pfSNN" type="number" min="14" max="40" step="0.5" inputmode="decimal"></label>
             <label for="pfNN">兩乳頭間距(cm)<input id="pfNN" type="number" min="14" max="32" step="0.5" inputmode="decimal"></label>
             <label for="pfIMD">兩乳房內緣間距(cm)<input id="pfIMD" type="number" min="0.5" max="8" step="0.5" inputmode="decimal"></label>
+            <label for="pfSNU">胸骨上切跡到肚臍(cm)<input id="pfSNU" type="number" min="25" max="60" step="0.5" inputmode="decimal"></label>
           </div>
+          <button class="chip" id="pfIdeal" type="button">乳頭位置套用美學比例</button>
           <p class="hint" id="pfCalc"></p>
         </div>
         <div class="grid2">
@@ -352,6 +354,7 @@ table.diff td { width: 50%; }
     <ul class="src">
       <li>Z-Anatomy, The libre 3D atlas of anatomy, <a href="https://github.com/Z-Anatomy/Models-of-human-anatomy">CC BY-SA 4.0</a></li>
       <li>MakeHuman 基底網格與形狀參數(MPFB2),<a href="https://github.com/makehumancommunity/mpfb2">CC0 1.0</a></li>
+      <li>乳房外形以 liRBSM 平均乳房形狀(Weiherer et al.,<a href="https://github.com/mweiherer/local-irbsm">MIT</a>)的側面剖面校正;乳頭位置的美學比例參考 Hwang et al., Arch Plast Surg 2015;42:226</li>
       <li>BodyParts3D, © The Database Center for Life Science, <a href="https://dbarchive.biosciencedbc.jp/en/bodyparts3d/download.html">原始資料</a>(Mitsuhashi et al., Nucleic Acids Res 2009)</li>
       <li>保留乳房手術:<a href="https://www.cancer.org/cancer/breast-cancer/treatment/surgery-for-breast-cancer/breast-conserving-surgery-lumpectomy.html">American Cancer Society</a>、<a href="https://www.moffitt.org/endeavor/archive/lumpectomy-vs-mastectomy/">Moffitt</a></li>
       <li>背闊肌局部重建:<a href="https://doaj.org/article/e82a91c95d0a4cfd9176c50c6a45ce6f">Plast Reconstr Surg Glob Open 2024</a></li>
@@ -361,7 +364,7 @@ table.diff td { width: 50%; }
     </ul>
     <div class="review">
       <span>審核醫師:__________</span>
-      <span>版本:v0.10 草稿</span>
+      <span>版本:v0.11 草稿</span>
       <span>審核日期:__________</span>
     </div>
     <p class="note">本頁為衛教用示意,不是個人治療建議,也不代表手術後的實際外觀。實際選擇請依主治醫師評估。</p>

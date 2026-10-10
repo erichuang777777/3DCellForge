@@ -260,7 +260,9 @@ const cupOf = (d) => { const ks = Object.keys(CUP_D); let best = ks[0]; for (con
 // 預設略為美化(較挺、上半部較飽滿),讓病人看到的外形有心理支持;仍可在面板調整
 const AGE_DEF = { y: { pt: 0.3, full: 0.7 }, m: { pt: 0.6, full: 0.6 }, o: { pt: 1.2, full: 0.45 }, e: { pt: 1.8, full: 0.35 } };
 const PROFILE = { mode: 'cup', cup: 'C', age: 'm', pt: 0.6, ratio: 0.45, full: 0.6, ver: 0,
-  height: 160, weight: 55, underbust: 75, bust: 90, snn: 19, nn: 19, imd: 3 };
+  height: 160, weight: 55, underbust: 75, bust: 90, snn: 19, nn: 19, imd: 3, snu: 40 };
+// 美學比例(Hwang 2015,西洋繪畫分析;Penn 1955 等邊三角形):胸骨上切跡到乳頭 ≈ 兩乳頭間距 ≈ 0.46 × 胸骨上切跡到肚臍
+const idealSNN = (snu) => 0.46 * snu;
 const smooth = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
 const clampN = (v, a, b) => Math.min(Math.max(v, a), b);
 // 量測值(cm)。罩杯快選時,其他距離用該罩杯的常見值
@@ -269,7 +271,9 @@ function measures() {
     return { d: clampN(PROFILE.bust - PROFILE.underbust, 5, 30), ub: clampN(PROFILE.underbust, 60, 120), snn: clampN(PROFILE.snn, 14, 40), nn: clampN(PROFILE.nn, 14, 32), imd: clampN(PROFILE.imd, 0.5, 8) };
   }
   const d = CUP_D[PROFILE.cup] ?? 15;
-  return { d, ub: 75, snn: 18 + (d - 12.5) * 0.3, nn: 18.5 + (d - 12.5) * 0.15, imd: 3 };
+  // 罩杯快選:乳頭位置用美學比例(模型的胸骨上切跡到肚臍約 40 cm),大罩杯略低、略寬
+  const sn = idealSNN(PROFILE.snu) + (d - 15) * 0.15;
+  return { d, ub: 75, snn: sn, nn: sn, imd: 3 };
 }
 const bmi = () => PROFILE.weight / (PROFILE.height / 100) ** 2;
 
@@ -281,7 +285,7 @@ function geomOf(p) {
   let g = GEO.get(key); if (g) return g;
   const M = measures(); const sc = p.sc || 1; const round = p.shape === 'round';
   // 突度由上下胸圍差決定;基底寬度由下胸圍(胸廓大小)決定
-  const P = p.Pabs ?? (p.P / 0.064) * M.d * 0.0036 * sc;
+  const P = p.Pabs ?? (p.P / 0.064) * M.d * 0.0031 * sc; // 係數依 iRBSM 平均形狀的側面剖面校正
   const W = clampN(M.ub * 0.17, 10, 20) / 100 * sc;
   let pt = p.pt ?? PROFILE.pt * (p.ptosis ?? 1);
   if (round) pt = Math.min(pt, 0.2);
@@ -324,10 +328,10 @@ function profile(du, dw, g) {
   const t = Math.sqrt(t2);
   const down = y < 0 && t > 1e-6 ? Math.pow(-y / t, 1.5) : 0;
   // 寬圓的穹頂(超橢圓):中央平緩、邊緣才收;下緣較陡,形成乳房下皺褶
-  const dome = g.round ? Math.pow(1 - t2, 0.7) : Math.pow(1 - Math.pow(t, 2.2), 0.55 - 0.1 * down);
+  const dome = g.round ? Math.pow(1 - t2, 0.7) : Math.pow(1 - Math.pow(t, 3.0), 0.5 - 0.08 * down);
   if (y <= 0 || g.round) return g.P * dome;
   const cone = Math.pow(1 - t, g.aU);
-  const upper = dome + (cone - dome) * smooth(0, 0.5, t);
+  const upper = dome + (cone - dome) * smooth(0.25, 0.85, t);
   return g.P * (dome + (upper - dome) * Math.pow(y / t, 0.7));
 }
 function breastField(du, dw, p) {
@@ -1482,11 +1486,13 @@ function sectionSVG(ml) {
 // ---------- 病人條件面板 ----------
 const PT_ZH = ['挺', '略垂', '輕度', '輕到中度', '中度', '中到重度', '重度'];
 function buildProfileUI() {
-  const F = { pfH: 'height', pfW: 'weight', pfUB: 'underbust', pfB: 'bust', pfSNN: 'snn', pfNN: 'nn', pfIMD: 'imd' };
+  const F = { pfH: 'height', pfW: 'weight', pfUB: 'underbust', pfB: 'bust', pfSNN: 'snn', pfNN: 'nn', pfIMD: 'imd', pfSNU: 'snu' };
   $('pfCup').value = PROFILE.cup; $('pfAge').value = PROFILE.age; $('pfPt').value = PROFILE.pt; $('pfUp').value = PROFILE.ratio; $('pfFull').value = PROFILE.full;
   for (const [id, k] of Object.entries(F)) $(id).value = PROFILE[k];
   let timer = null; const later = () => { clearTimeout(timer); timer = setTimeout(profileChanged, 180); renderProfile(); };
   for (const b of $('pfMode').children) b.addEventListener('click', () => { PROFILE.mode = b.dataset.mode; later(); });
+  // 套用美學比例:模擬重建或對稱手術的目標乳頭位置
+  $('pfIdeal').addEventListener('click', () => { const v = Math.round(idealSNN(PROFILE.snu) * 2) / 2; PROFILE.snn = v; PROFILE.nn = v; $('pfSNN').value = v; $('pfNN').value = v; later(); });
   $('pfCup').addEventListener('change', () => { PROFILE.cup = $('pfCup').value; later(); });
   for (const [id, k] of Object.entries(F)) $(id).addEventListener('input', () => { const v = Number($(id).value); if (Number.isFinite(v) && v >= Number($(id).min) && v <= Number($(id).max)) { PROFILE[k] = v; later(); } });
   $('pfAge').addEventListener('change', () => { PROFILE.age = $('pfAge').value; const d = AGE_DEF[PROFILE.age]; PROFILE.pt = d.pt; PROFILE.full = d.full; $('pfPt').value = d.pt; $('pfFull').value = d.full; later(); });
@@ -1501,7 +1507,8 @@ function renderProfile() {
   for (const b of $('pfMode').children) b.setAttribute('aria-pressed', String(b.dataset.mode === PROFILE.mode));
   $('pfCupBox').hidden = meas; $('pfMeasBox').hidden = !meas;
   const M = measures(); const cup = meas ? cupOf(M.d) : PROFILE.cup;
-  $('pfCalc').textContent = `上下胸圍差 ${fmt(M.d)} cm,約 ${cup} 罩杯(下胸圍 ${fmt(M.ub)});BMI ${fmt(bmi())}。同樣罩杯,下胸圍越大乳房越寬;BMI 較高時組織較軟、較容易下垂。`;
+  const ideal = idealSNN(PROFILE.snu);
+  $('pfCalc').textContent = `上下胸圍差 ${fmt(M.d)} cm,約 ${cup} 罩杯(下胸圍 ${fmt(M.ub)});BMI ${fmt(bmi())}。同樣罩杯,下胸圍越大乳房越寬;BMI 較高時組織較軟、較容易下垂。美學參考:胸骨上切跡到乳頭與兩乳頭間距約 ${fmt(ideal)} cm(0.46 × 胸骨上切跡到肚臍),目前 ${fmt(M.snn)} 與 ${fmt(M.nn)} cm。`;
   $('pfPtV').textContent = PT_ZH[Math.round(PROFILE.pt * 2)] ?? '';
   $('pfUpV').textContent = `${Math.round(PROFILE.ratio * 100)}:${100 - Math.round(PROFILE.ratio * 100)}`;
   $('pfFullV').textContent = PROFILE.full < 0.3 ? '較扁(凹)' : PROFILE.full < 0.6 ? '平直' : '飽滿(凸)';
@@ -1839,7 +1846,7 @@ async function boot() {
     splitComponents(m.geometry).forEach((g, k) => meshes.push({ name: `${m.name}#${k}`, geometry: g }));
   }
   BASE = { meshes, curves: meta.curves };
-  window.__atlas = { instances, camera, controls, app }; // 測試用
+  window.__atlas = { instances, camera, controls, app, THREE }; // 測試用
   instances.push(createInstance(), createInstance());
   ui.loading.hidden = true;
   resize();
