@@ -330,7 +330,8 @@ function profile(du, dw, g) {
   const t = Math.sqrt(t2);
   const down = y < 0 && t > 1e-6 ? Math.pow(-y / t, 1.5) : 0;
   // 寬圓的穹頂(超橢圓):中央平緩、邊緣才收;下緣較陡,形成乳房下皺褶
-  const dome = g.round ? Math.pow(1 - t2, 0.7) : Math.pow(1 - Math.pow(t, 3.0), 0.5 - 0.08 * down);
+  // 圓形(假體):寬而飽滿的穹頂、上極外凸;邊緣以圓角收進胸壁,避免一圈摺痕
+  const dome = g.round ? Math.pow(1 - Math.pow(t, 2.4), 0.58) * (0.55 + 0.45 * smooth(1.0, 0.8, t)) : Math.pow(1 - Math.pow(t, 3.0), 0.5 - 0.08 * down);
   if (y <= 0 || g.round) return g.P * dome;
   const cone = Math.pow(1 - t, g.aU);
   const upper = dome + (cone - dome) * smooth(0.25, 0.85, t);
@@ -1512,7 +1513,7 @@ function showPanels() {
   $('cmpPanel').hidden = !cmp; $('simPanel').hidden = cmp || !sim; $('stepPanel').hidden = cmp || sim; $('pcSect').hidden = cmp || sim;
 }
 // 依目前情境挑一個相關的比較主題
-const CMP_FOR = { bcs: 'bcs_mast', masttypes: 'mast_recon', ld: 'bcs_recon', omentum: 'bcs_recon', fatgraft: 'bcs_recon', implant: 'implant_plane', implplanes: 'implant_plane', tram: 'impl_diep', diep: 'impl_diep', symm: 'contra', aug: 'contra' };
+const CMP_FOR = { bcs: 'bcs_mast', masttypes: 'mast_recon', ld: 'bcs_recon', omentum: 'bcs_recon', fatgraft: 'bcs_recon', implant: 'implant_plane', implplanes: 'implant_plane', tram: 'impl_diep', diep: 'impl_diep', symm: 'contra', aug: 'aug_look' };
 function setMode(mode) {
   if (mode === 'compare' && app.mode !== 'compare') {
     const sc = SCENARIOS.find((x) => x.id === app.scn);

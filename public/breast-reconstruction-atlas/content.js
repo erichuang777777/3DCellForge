@@ -19,7 +19,8 @@ const arc = (r, a0, a1, n = 16, cx = 0, cy = 0) => Array.from({ length: n + 1 },
 const imfCut = (side, dashed) => ({ side, dashed, closed: false, ref: 'imf', pts: Array.from({ length: 11 }, (_, i) => { const x = -0.025 + 0.005 * i; return [+x.toFixed(4), +(1.2 * x * x).toFixed(4)]; }) });
 const areolaCut = (side, dashed) => ({ side, dashed, closed: false, pts: arc(0.0185, Math.PI * 0.6, Math.PI * 1.4) });
 const AUG_SMALL = { R: { P: 0.045 }, L: { P: 0.045 } };
-const AUG_BIG = { R: { P: 0.07, upper: 0.55, ptosis: 0.5 }, L: { P: 0.07, upper: 0.55, ptosis: 0.5 } };
+// 圓形假體術後外觀:寬而圓的穹頂、上極飽滿、乳頭在最突出處
+const AUG_BIG = { R: { P: 0.086, shape: 'round', sc: 1.12 }, L: { P: 0.086, shape: 'round', sc: 1.12 } };
 
 export const SCENARIOS = [
   {
@@ -120,7 +121,7 @@ export const SCENARIOS = [
       { title: '放置層次:乳腺下', cam: 'oblique', peel: 3, text: '假體放在乳腺後方、胸大肌前方。恢復較快,但皮下組織薄的人容易看到假體邊緣。', state: { ...AUG_SMALL, aug: { plane: 'subglandular', fill: 1, vis: 1, shapeR: 'round', shapeL: 'round' } } },
       { title: '放置層次:雙平面或胸大肌下', cam: 'oblique', peel: 3, text: '假體上半部由胸大肌覆蓋(圖中肌肉半透明),邊緣較自然、包膜攣縮較少;缺點是用力時乳房可能隨肌肉移動。', state: { ...AUG_SMALL, ghostMus: 0.4, hi: ['pecmaj'], aug: { plane: 'dual', fill: 1, vis: 1, shapeR: 'round', shapeL: 'round' } } },
       { title: '假體形狀:圓形與水滴形', cam: 'front', peel: 3, text: '畫面左邊是圓形假體(上半部較飽滿),畫面右邊是水滴形假體(下半部較飽滿,較接近自然下垂)。', state: { ...AUG_SMALL, ghostMus: 0.4, aug: { plane: 'dual', fill: 1, vis: 1, shapeR: 'round', shapeL: 'tear' } } },
-      { title: '術後外觀', cam: 'oblique', text: '乳房體積增加,上半部較飽滿。圖中是乳房下皺褶切口,疤痕藏在下緣。', state: { ...AUG_BIG, aug: { plane: 'dual', fill: 1, vis: 1, shapeR: 'round', shapeL: 'round' }, custom: [imfCut('R', false), imfCut('L', false)] } }
+      { title: '術後外觀', cam: 'oblique', text: '圓形假體的典型術後外觀:乳房變大變圓,上半部飽滿外凸,乳頭位在最突出處,兩側邊界較明顯。圖中是乳房下皺褶切口,疤痕藏在下緣。想要較自然的斜坡,可選水滴形假體或較小的尺寸(見並排比較)。', state: { ...AUG_BIG, aug: { plane: 'dual', fill: 1, vis: 1, shapeR: 'round', shapeL: 'round' }, custom: [imfCut('R', false), imfCut('L', false)] } }
     ],
     pros: ['一次手術,恢復約數週', '可選擇大小、形狀與切口位置', '也可改用自體脂肪移植,適合想小幅增加的人'],
     cons: ['包膜攣縮、破裂、移位,假體並非終身,日後可能需要更換或取出', '乳房攝影需要特殊照法', '罕見的假體相關淋巴瘤(BIA-ALCL),與粗糙面假體較相關'],

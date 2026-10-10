@@ -108,6 +108,21 @@ export const PRESETS = [
     }
   },
   {
+    id: 'aug_look', zh: '隆乳外觀:自然 vs 圓形飽滿', opts: [{ key: 'size', zh: '大小', choices: [['m', '中等'], ['l', '較大']] }],
+    build: ({ size }) => {
+      const k = size === 'l' ? 1 : 0.84;
+      const nat = { P: r4(0.074 * k), upper: 0.5, ptosis: 0.45 };
+      const rnd = { P: r4(0.086 * k), shape: 'round', sc: r4(1 + 0.12 * k) };
+      return {
+        cam: 'oblique',
+        a: { label: '自然外觀(水滴形)', state: { R: nat, L: nat, custom: [imfLine(0.03), imfLine(0.03, 'L')] } },
+        b: { label: '圓形飽滿(圓形假體)', state: { R: rnd, L: rnd, custom: [imfLine(0.03), imfLine(0.03, 'L')] } },
+        text: '同樣是隆乳,外觀可以差很多。水滴形假體或較小的圓形假體,上半部呈自然斜坡、下半部較飽滿;較大的圓形假體上半部飽滿外凸、整體偏圓,邊界較明顯。實際效果還取決於原本的組織厚度與放置層次。',
+        diffs: [['上半部自然斜坡', '上半部飽滿外凸'], ['下半部較飽滿,略帶下垂', '整體偏圓,乳頭在最突出處'], ['較不易看出做過手術', '較明顯的「做過」外觀']]
+      };
+    }
+  },
+  {
     id: 'implant_plane', zh: '假體:胸大肌下 vs 胸大肌前', section: true,
     opts: [{ key: 'ml', zh: '假體大小', choices: [['250', '250 mL'], ['350', '350 mL'], ['450', '450 mL'], ['550', '550 mL']] }, { key: 'view', zh: '看', choices: [['layer', '肌肉與假體'], ['skin', '外觀']] }],
     build: ({ ml, view }) => {
