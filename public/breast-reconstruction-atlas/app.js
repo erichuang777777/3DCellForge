@@ -261,12 +261,14 @@ const smooth = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0),
 
 // 狀態中的乳房參數 + 病人條件 → 實際幾何。abs:數值已含大小(模擬器用);pt:絕對下垂程度(0–3);ptosis:相對病人的倍數
 const GEO = new Map();
+const VOL_K = 0.82;
 function geomOf(p) {
   const k = profSc();
   const key = JSON.stringify([p.P, p.Pabs, p.abs, p.sc, p.shape, p.lift, p.pt, p.ptosis, p.upper, p.ratio, PROFILE.ver]);
   let g = GEO.get(key); if (g) return g;
   const sc = p.abs ? (p.sc || 1) : (p.sc || 1) * k;
-  const P = p.Pabs ?? (p.abs ? p.P : p.P * k);
+  // VOL_K:讓 C 罩杯模型體積約 450 mL(以數值積分校正)
+  const P = p.Pabs ?? (p.abs ? p.P : p.P * k) * (p.shape === 'round' ? 1 : VOL_K);
   const round = p.shape === 'round';
   let pt = p.pt ?? PROFILE.pt * (p.ptosis ?? 1);
   if (round) pt = Math.min(pt, 0.2);
@@ -276,9 +278,11 @@ function geomOf(p) {
   const lift = p.lift || 0;
   const uN = 0.006 * sc;
   const wN = top - (ratio + calibOff(sc, full, round, P, ratio)) * H + lift;
-  g = { P, sc, pt, full, ratio, top, bot, wN, uN, shape: p.shape, round, Rup: top - wN, Rlo: wN - bot, Rlat: 0.088 * sc - uN, Rmed: 0.068 * sc + uN,
+  g = { P, sc, pt, full, ratio, top, bot, wN, uN, shape: p.shape, round, Rup: top - wN, Rlo: wN - bot, Rlat: 0.088 * sc - uN, Rmed: 0.058 * sc + uN,
     aU: 1.4 - 0.65 * full, dropA: p.shape === 'natural' && P > 0.0005 ? (0.01 + 0.036 * pt) * sc * Math.min(P / (0.064 * sc), 1.4) * (1 - Math.min(lift / 0.02, 0.6)) : 0 };
   g.wV = g.wN - 0.85 * g.dropA; // 下垂後看到的乳頭高度(基底座標)
+  // 下垂時乳頭沿乳房表面往下、往外滑,朝向外下方
+  g.nU = g.uN + (g.round ? 0 : 0.004 * pt * sc); g.nW = g.wN - (g.round ? 0 : 0.0075 * pt * sc);
   if (GEO.size > 400) GEO.clear();
   GEO.set(key, g); return g;
 }
@@ -290,7 +294,7 @@ function calibOff(sc, full, round, P, ratio) {
   let lo = -0.25, hi = 0.25;
   for (let it = 0; it < 14; it++) {
     const off = (lo + hi) / 2; const top = 0.07 * sc, bot = -0.066 * sc, H = top - bot; const uN = 0.006 * sc; const wN = top - (ratio + off) * H;
-    const g = { P, sc, full, round, shape: round ? 'round' : 'natural', top, bot, wN, uN, Rup: top - wN, Rlo: wN - bot, Rlat: 0.088 * sc - uN, Rmed: 0.068 * sc + uN, aU: 1.4 - 0.65 * full, dropA: round ? 0 : (0.01 + 0.036) * sc };
+    const g = { P, sc, full, round, shape: round ? 'round' : 'natural', top, bot, wN, uN, Rup: top - wN, Rlo: wN - bot, Rlat: 0.088 * sc - uN, Rmed: 0.058 * sc + uN, aU: 1.4 - 0.65 * full, dropA: round ? 0 : (0.01 + 0.036) * sc };
     const up = meridianUp(g);
     if (up > ratio) hi = off; else lo = off; // 上極太長 → 乳頭往上
   }
@@ -310,7 +314,8 @@ function profile(du, dw, g) {
   if (g.shape === 'flat' || g.P < 0.0005) return 0.0015 * (1 - t2);
   const t = Math.sqrt(t2);
   const down = y < 0 && t > 1e-6 ? Math.pow(-y / t, 1.5) : 0;
-  const dome = Math.pow(1 - t2, g.round ? 0.7 : 0.85 - 0.3 * down);
+  // 寬圓的穹頂(超橢圓):中央平緩、邊緣才收;下緣較陡,形成乳房下皺褶
+  const dome = g.round ? Math.pow(1 - t2, 0.7) : Math.pow(1 - Math.pow(t, 2.4), 0.62 - 0.17 * down);
   if (y <= 0 || g.round) return g.P * dome;
   const cone = Math.pow(1 - t, g.aU);
   const upper = dome + (cone - dome) * smooth(0, 0.5, t);
@@ -320,7 +325,7 @@ function breastField(du, dw, p) {
   const g = p.g || geomOf(p);
   let D = profile(du, dw, g);
   if (p.areola && g.P > 0.02) {
-    const dn2 = (du - g.uN - (p.nsu || 0)) ** 2 + (dw - g.wN - (p.nsw || 0)) ** 2;
+    const dn2 = (du - g.nU - (p.nsu || 0)) ** 2 + (dw - g.nW - (p.nsw || 0)) ** 2;
     D += 0.004 * Math.exp(-dn2 / (2 * 0.0045 ** 2));
   }
   const D0 = D;
@@ -336,12 +341,13 @@ function breastField(du, dw, p) {
     const f = Math.max(D / g.P, 0); const u = du - g.uN, w = dw - g.wN;
     const x = u / (u > 0 ? g.Rlat : g.Rmed), y = w / (w > 0 ? g.Rup : g.Rlo); const r = Math.hypot(x, y); const t = Math.min(r, 1);
     const downness = y < 0 && r > 1e-6 ? -y / r : 0; const lo = Math.min(Math.max(-y, 0), 1);
-    drop = g.dropA * Math.pow(Math.min(f, 1.1), 0.4 + 1.1 * (1 - downness) * t) * smooth(0, 0.55, f) * (1 + 0.2 * lo);
+    // 整個乳房像袋子一樣往下垂(依組織厚度),下緣維持寬 U 形而不是收成錐狀
+    drop = g.dropA * Math.pow(Math.min(f, 1.1), 0.85) * (1 + 0.35 * lo * (0.5 + 0.5 * downness));
   }
   return { D, drop };
 }
 // 乳頭在局部座標的位置(含移位)
-function nipLocal(p) { const g = geomOf(p); return [g.uN + (p.nsu || 0), g.wN + (p.nsw || 0)]; }
+function nipLocal(p) { const g = geomOf(p); return [g.nU + (p.nsu || 0), g.nW + (p.nsw || 0)]; }
 
 function prepBreastRegions(skinGeom) {
   const pos = skinGeom.attributes.position;
@@ -1041,7 +1047,7 @@ function updateBreasts(inst, s) {
         return Math.max(0, z + cover - v.dot(pose.f)) * (1 - smooth(0.75, 1.8, r));
       };
     }
-    const [nu, nw] = [g.uN + (p.nsu || 0), g.wN + (p.nsw || 0)];
+    const [nu, nw] = [g.nU + (p.nsu || 0), g.nW + (p.nsw || 0)];
     let maxD = -1, maxI = -1; let top = -1e9, low = 1e9;
     for (let j = 0; j < reg.idx.length; j++) {
       const i = reg.idx[j]; let { D, drop } = breastField(reg.du[j], reg.dw[j], p); const wk = reg.wt[j]; D *= wk; drop *= wk;
