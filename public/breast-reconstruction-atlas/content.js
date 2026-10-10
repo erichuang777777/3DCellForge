@@ -2,6 +2,15 @@
 
 export const LAYER_NAMES = ['皮膚', '皮下脂肪', '乳腺', '肌肉', '骨骼與深層'];
 
+// DIEP 術前 CTA 穿通枝地圖(示意數值,非真實病人)。dx:距中線往外(公分);dy:相對肚臍(公分,負值在下);dia:管徑(毫米);im:肌肉內走行長度(公分)
+export const PERF_MAP = [
+  { id: 'P1', side: 'R', row: '內側列', dx: 1.5, dy: -1.5, dia: 1.8, im: 1.5, dom: true },
+  { id: 'P2', side: 'R', row: '外側列', dx: 4.0, dy: -3.0, dia: 1.4, im: 3.0 },
+  { id: 'P3', side: 'R', row: '內側列', dx: 2.0, dy: -5.5, dia: 1.1, im: 2.0 },
+  { id: 'P4', side: 'L', row: '內側列', dx: 1.5, dy: -2.5, dia: 1.6, im: 1.5 },
+  { id: 'P5', side: 'L', row: '外側列', dx: 4.5, dy: -4.5, dia: 1.0, im: 3.5 }
+];
+
 const MAST = { R: { P: 0, shape: 'flat', areola: false, defect: 0, gland: false, fat: false }, scars: ['mast_line'] };
 
 
@@ -77,6 +86,8 @@ export const SCENARIOS = [
     steps: [
       { title: '乳房全切', cam: 'oblique', text: '右乳全切後,胸前是平的。', state: { ...MAST } },
       { title: '規劃下腹部皮瓣', cam: 'abdomen', text: '皮瓣範圍與 TRAM 相同,位在肚臍與恥骨之間。', state: { ...MAST, scars: ['mast_line', 'abd_design'] } },
+      { title: '術前 CTA:穿通枝地圖', cam: 'perf', text: '術前電腦斷層血管攝影(CTA)會找出下腹壁動脈穿過腹直肌的小分支,也就是穿通枝。報告以肚臍為原點,記下每條穿通枝在哪裡(往外、往下幾公分)、有多粗、在肌肉裡走多長。圖上每格 2 公分,圓環是穿通枝穿出筋膜的位置,黃色是預計使用的主要穿通枝。點下方表格可以個別查看。(圖中數值為示意)', state: { ...MAST, scars: ['mast_line', 'abd_design'], perfMap: 1 } },
+      { title: '穿通枝穿過腹直肌的路徑', cam: 'perfObl', peel: 2, text: '剝開皮膚與脂肪、肌肉調成半透明後,可以看到每條穿通枝從腹直肌後方的下腹壁動脈分出,斜穿過肌肉,再穿過脂肪到皮膚。在肌肉裡走得越短、越直,分離時對肌肉的影響越小;內側列與外側列穿通枝的選擇也會影響皮瓣血流範圍。拖曳右下角滑桿可以慢慢剝開每一層。', state: { ...MAST, perfMap: 1, perfCourse: 1, ghostMus: 0.14, vessels: ['Inferior epigastric artery.r', 'Inferior epigastric artery.l'] } },
       { title: '找到下腹壁血管', cam: 'abdomen', peel: 2, text: '下腹壁動靜脈走在腹直肌後方,分出細小的穿通枝穿過肌肉供應皮瓣。醫師沿著穿通枝分離,把肌肉留在原位。', state: { ...MAST, vessels: ['Inferior epigastric artery.r', 'Inferior epigastric vein.r'], ghostMus: 0.45 } },
       { title: '皮瓣完全取下,移到胸前', cam: 'front', text: '皮瓣連同血管完全取下(游離皮瓣),移到右胸。', state: { ...MAST, ghostSkin: 0.35, wound: 1, flap: { kind: 'diep', t: 1, vis: 1 } }, dur: 2600 },
       { title: '顯微吻合到內乳血管', cam: 'oblique', peel: 4, text: '在胸骨旁找到內乳動靜脈(常需移除一小段肋軟骨),在顯微鏡下把皮瓣血管接上。黃色光點是吻合位置。', state: { ...MAST, wound: 1, flap: { kind: 'diep', t: 1, vis: 0.4 }, vessels: ['Internal thoracic artery.r', 'Internal thoracic veins.r'], anast: 1 } },
@@ -141,7 +152,7 @@ export const END_STATES = [
   { id: 'ld', label: '外上方 + 背闊肌', from: ['ld', 4] },
   { id: 'omentum', label: '內下方 + 大網膜', from: ['omentum', 4] },
   { id: 'tram', label: '全切 + TRAM', from: ['tram', 5] },
-  { id: 'diep', label: '全切 + DIEP', from: ['diep', 5] },
+  { id: 'diep', label: '全切 + DIEP', from: ['diep', 7] },
   { id: 'implant', label: '全切 + 假體', from: ['implant', 4] },
   { id: 'aug0', label: '隆乳前', from: ['aug', 0] },
   { id: 'aug', label: '隆乳後', from: ['aug', 5] },

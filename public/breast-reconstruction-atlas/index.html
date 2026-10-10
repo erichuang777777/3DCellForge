@@ -79,6 +79,13 @@ button { font: inherit; }
 .peel label { font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
 .peel label b { color: var(--fg); }
 .peel input { width: 100%; accent-color: var(--accent); }
+.perfbox { margin: 8px 0 4px; overflow-x: auto; }
+.perftab { width: 100%; min-width: 0; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.perftab th, .perftab td { padding: 4px 5px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.perftab th { color: var(--muted); font-weight: 500; }
+.perftab tbody tr { cursor: pointer; }
+.perftab tbody tr:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.perftab tbody tr[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 18%, transparent); font-weight: 600; }
 .peel .ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
 .cmplabels { position: absolute; top: 56px; left: 0; right: 0; display: flex; pointer-events: none; }
 .cmplabels span { flex: 1; text-align: center; font-family: var(--font-display); font-weight: 700; color: var(--ink); font-size: 15px; }
@@ -192,7 +199,7 @@ table.diff td { width: 50%; }
       <h1>乳房重建 3D 圖譜</h1>
       <p class="sub">用 3D 解剖模型看懂不同的乳癌手術與重建方式。拖曳旋轉、滾輪縮放,點選任何結構可看說明。</p>
     </div>
-    <span class="badge">v0.11 草稿・待醫師審核</span>
+    <span class="badge">v0.12 草稿・待醫師審核</span>
   </div>
 
   <nav class="tabs cats" id="cats" aria-label="分類"></nav>
@@ -211,7 +218,7 @@ table.diff td { width: 50%; }
       <div class="cmplabels" id="cmplabels" hidden><span id="cmpA"></span><span id="cmpB"></span></div>
       <div class="peel">
         <label for="peel">剝開到 <b id="peelName">皮膚</b></label>
-        <input id="peel" type="range" min="0" max="4" step="1" value="0">
+        <input id="peel" type="range" min="0" max="4" step="0.01" value="0">
         <div class="ticks"><span>皮膚</span><span>脂肪</span><span>乳腺</span><span>肌肉</span><span>骨骼</span></div>
       </div>
       <div class="callout" id="callout" hidden></div>
@@ -318,6 +325,7 @@ table.diff td { width: 50%; }
         <p class="hint" id="scnOne"></p>
         <ol class="steps" id="steps"></ol>
         <p class="steptext" id="stepText"></p>
+        <div class="perfbox" id="perfBox" hidden></div>
         <div class="stepnav">
           <button id="prev">上一步</button>
           <button id="next" class="primary">下一步</button>
@@ -364,7 +372,7 @@ table.diff td { width: 50%; }
     </ul>
     <div class="review">
       <span>審核醫師:__________</span>
-      <span>版本:v0.11 草稿</span>
+      <span>版本:v0.12 草稿</span>
       <span>審核日期:__________</span>
     </div>
     <p class="note">本頁為衛教用示意,不是個人治療建議,也不代表手術後的實際外觀。實際選擇請依主治醫師評估。</p>

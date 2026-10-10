@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { SCENARIOS as BASE_SCENARIOS, END_STATES as BASE_END, COMPARE_DEFAULT, INFO, LAYER_NAMES } from './content.js';
+import { SCENARIOS as BASE_SCENARIOS, END_STATES as BASE_END, COMPARE_DEFAULT, INFO, LAYER_NAMES, PERF_MAP } from './content.js';
 import { CATS, BASE_META, EXTRA_SCENARIOS, TECH_BY_ID, DONORS, ZONE_L3 } from './techniques.js';
 const SCENARIOS = [...BASE_SCENARIOS.map((s) => ({ ...s, ...(BASE_META[s.id] || {}) })), ...EXTRA_SCENARIOS];
 const END_STATES = [...BASE_END, ...EXTRA_SCENARIOS.filter((x) => !BASE_END.some((e) => e.id === x.id)).map((x) => ({ id: x.id, label: x.short, from: [x.id, x.steps.length - 1] }))];
@@ -226,6 +226,8 @@ const CAMS = {
   side: { t: [-0.08, 1.24, 0.0], p: [-0.86, 1.3, 0.12] },
   back: { t: [0, 1.22, 0], p: [-0.2, 1.3, -0.9] },
   abdomen: { t: [0, 1.06, 0.06], p: [0.05, 1.15, 0.86] },
+  perf: { t: [0, 0.99, 0.1], p: [0.0, 1.03, 0.6] },
+  perfObl: { t: [-0.012, 0.99, 0.095], p: [-0.24, 1.03, 0.29] },
   full: { t: [0, 1.0, 0.02], p: [-0.35, 1.15, 1.9] },
   backLow: { t: [0, 0.9, -0.05], p: [-0.35, 1.05, -1.05] },
   thigh: { t: [-0.06, 0.74, 0.04], p: [-0.35, 0.88, 0.95] },
@@ -611,7 +613,104 @@ function createInstance() {
   buildAxilla(inst);
   buildGlandDetail(inst);
   buildFatDrops(inst);
+  buildAbdFat(inst);
+  buildPerfMap(inst);
   return inst;
+}
+
+// ---------- 下腹皮下脂肪層(剝層時顯示) ----------
+function buildAbdFat(inst) {
+  const sg = inst.skin.geometry; const pos = sg.attributes.position, nrm = sg.attributes.normal; const idx = sg.index.array;
+  const ok = (v) => { const x = pos.getX(v), y = pos.getY(v), z = pos.getZ(v); return y > 0.88 && y < 1.12 && Math.abs(x) < 0.13 && z > 0.05 && nrm.getZ(v) > 0.55; };
+  const map = new Map(); const src = []; const tris = [];
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = idx[t], b = idx[t + 1], c = idx[t + 2]; if (!ok(a) || !ok(b) || !ok(c)) continue;
+    for (const v of [a, b, c]) { if (!map.has(v)) { map.set(v, src.length); src.push(v); } tris.push(map.get(v)); }
+  }
+  const arr = new Float32Array(src.length * 3);
+  src.forEach((v, i) => { arr[i * 3] = pos.getX(v) - nrm.getX(v) * 0.003; arr[i * 3 + 1] = pos.getY(v) - nrm.getY(v) * 0.003; arr[i * 3 + 2] = pos.getZ(v) - nrm.getZ(v) * 0.003; });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(arr, 3)); g.setIndex(tris); g.computeVertexNormals();
+  inst.abdFat = addPartTo(inst, 'subq_abd', new THREE.Mesh(g, atlasMat('fat', ...PAL.fat, { side: THREE.DoubleSide })), 1, 'fat');
+}
+function addPartTo(inst, name, mesh, layer, info) {
+  mesh.name = name; mesh.userData.layer = layer; mesh.userData.info = info; inst.root.add(mesh); inst.parts.push(mesh); inst.byName.set(name, mesh); return mesh;
+}
+
+// ---------- DIEP 穿通枝地圖(以肚臍為原點的 CTA 報告示意) ----------
+const UMB = new THREE.Vector3(0, 1.0175, 0.115);
+function labelSprite(text, col) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 64; const x = c.getContext('2d');
+  x.fillStyle = 'rgba(255,255,255,0.92)'; x.strokeStyle = col; x.lineWidth = 5;
+  x.beginPath(); x.roundRect(4, 4, 120, 56, 14); x.fill(); x.stroke();
+  x.fillStyle = '#1d1d1f'; x.font = 'bold 38px system-ui, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, 64, 34);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
+  sp.scale.set(0.014, 0.007, 1); sp.renderOrder = 12; return sp;
+}
+function curveAtY(pts, y) {
+  for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i]; if ((a[1] - y) * (b[1] - y) <= 0 && a[1] !== b[1]) { const t = (y - a[1]) / (b[1] - a[1]); return new THREE.Vector3(a[0] + (b[0] - a[0]) * t, y, a[2] + (b[2] - a[2]) * t); } }
+  const e = pts.reduce((m, p) => (Math.abs(p[1] - y) < Math.abs(m[1] - y) ? p : m)); return new THREE.Vector3(...e);
+}
+function buildPerfMap(inst) {
+  inst.root.updateMatrixWorld(true);
+  const g = new THREE.Group(); g.visible = false; inst.root.add(g);
+  const skinPt = (x, y) => { const h = projectAlong(inst, x, y, new THREE.Vector3(0, 0, 1), 0.1); return h ? { p: h.p.clone(), n: h.n.clone() } : { p: new THREE.Vector3(x, y, 0.118), n: new THREE.Vector3(0, 0, 1) }; };
+  // 座標格:每 2 公分,中線與肚臍橫線加粗
+  const gridMat = new THREE.MeshBasicMaterial({ color: '#1f6a6f', transparent: true, opacity: 0.55, depthWrite: false });
+  const axisMat = new THREE.MeshBasicMaterial({ color: '#0e3a3d', transparent: true, opacity: 0.9, depthWrite: false });
+  const line = (pts, axis) => { const v = pts.map(([x, y]) => { const h = skinPt(x, y); return h.p.addScaledVector(h.n, 0.0008); }); g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(v), v.length * 2, axis ? 0.0006 : 0.00035, 4, false), axis ? axisMat : gridMat)); };
+  for (let i = -6; i <= 6; i++) line(Array.from({ length: 16 }, (_, k) => [UMB.x + i * 0.02, UMB.y + 0.04 - k * 0.01]), i === 0);
+  for (let j = 2; j >= -5; j--) line(Array.from({ length: 25 }, (_, k) => [UMB.x - 0.12 + k * 0.01, UMB.y + j * 0.02]), j === 0);
+  inst.perfGrid = [gridMat, axisMat];
+  // 每條穿通枝:皮膚出口環、編號、深部走向
+  const dieaR = BASE.curves['Inferior epigastric artery.r']?.[0], dieaL = BASE.curves['Inferior epigastric artery.l']?.[0];
+  const rect = { R: inst.byName.get('rectus_r'), L: inst.byName.get('rectus_l') };
+  inst.perfItems = [];
+  for (const d of PERF_MAP) {
+    const sx = d.side === 'R' ? -1 : 1; const x = UMB.x + sx * d.dx / 100, y = UMB.y + d.dy / 100;
+    const sk = skinPt(x, y);
+    const col = d.dom ? '#f2b705' : '#d9412f';
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.0042, 0.0009, 8, 32), atlasMat('plain', col, d.dom ? '#8a6500' : '#7a1510', { hatch: 0 }));
+    ring.position.copy(sk.p).addScaledVector(sk.n, 0.001); ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), sk.n);
+    ring.material.depthTest = false; ring.renderOrder = 11; ring.userData.info = 'perf'; g.add(ring);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0016, 10, 8), ring.material); dot.position.copy(ring.position); dot.renderOrder = 11; g.add(dot);
+    const lab = labelSprite(d.id, col); lab.position.copy(sk.p).addScaledVector(sk.n, 0.004).add(new THREE.Vector3(sx * 0.009, 0.006, 0)); g.add(lab);
+    // 肌肉前後緣:沿 -Z 射線打腹直肌
+    let zF = 0.1, zB = 0.088;
+    const rm = rect[d.side];
+    if (rm) { raycaster.set(new THREE.Vector3(x, y, 0.5), new THREE.Vector3(0, 0, -1)); raycaster.far = 1; const hs = raycaster.intersectObject(rm, false); if (hs.length >= 2) { zF = hs[0].point.z; zB = hs[hs.length - 1].point.z; } else if (hs.length === 1) { zF = hs[0].point.z; zB = zF - 0.01; } }
+    const pts = sx < 0 ? dieaR : dieaL;
+    const yB = y - (d.im / 100) * 0.75;
+    const trunk = pts ? curveAtY(pts, yB - 0.02) : new THREE.Vector3(sx * 0.034, yB - 0.02, 0.08);
+    const back = new THREE.Vector3(x - sx * 0.003, yB, zB - 0.002);
+    const front = new THREE.Vector3(x, y - 0.002, zF + 0.001);
+    const deepC = new THREE.CatmullRomCurve3([trunk, trunk.clone().lerp(back, 0.5).add(new THREE.Vector3(0, 0, -0.002)), back]);
+    const musC = new THREE.CatmullRomCurve3([back, back.clone().lerp(front, 0.5).add(new THREE.Vector3(sx * 0.002, 0, 0)), front]);
+    const subC = new THREE.CatmullRomCurve3([front, front.clone().lerp(sk.p, 0.5).add(new THREE.Vector3(sx * 0.003, 0.002, 0)), sk.p.clone()]);
+    const r = 0.0007 + d.dia * 0.0005; // 為了看得見,比實際管徑粗
+    const cm = atlasMat('plain', ...PAL.artery, { hatch: 0 });
+    const course = new THREE.Group(); course.visible = false;
+    for (const c of [deepC, musC, subC]) { const m = new THREE.Mesh(new THREE.TubeGeometry(c, 16, r, 6, false), cm); m.userData.info = 'perf'; m.renderOrder = 9; course.add(m); }
+    // 穿過筋膜的點
+    const fas = new THREE.Mesh(new THREE.SphereGeometry(r * 1.9, 10, 8), atlasMat('plain', col, '#5a1a14', { hatch: 0 })); fas.position.copy(front); course.add(fas);
+    g.add(course);
+    inst.perfItems.push({ d, ring, dot, lab, course, cm });
+  }
+  inst.perfMap = g;
+}
+function updatePerfMap(inst, s) {
+  const g = inst.perfMap; if (!g) return;
+  const v = s.perfMap || 0; g.visible = v > 0.01;
+  if (!g.visible) return;
+  inst.perfGrid[0].opacity = 0.55 * v * (s.peel < 0.6 ? 1 : 0.25); inst.perfGrid[1].opacity = 0.9 * v * (s.peel < 0.6 ? 1 : 0.35);
+  const sel = app.perfSel;
+  for (const it of inst.perfItems) {
+    const on = !sel || sel === it.d.id; const k = sel === it.d.id ? 1.45 : 1;
+    it.ring.scale.setScalar(k); it.dot.visible = sel === it.d.id;
+    setOpacity(it.ring, v * (on ? 1 : 0.3));
+    it.lab.material.opacity = v * (on ? 1 : 0.35);
+    it.course.visible = (s.perfCourse || 0) > 0.01; setOpacity(it.course, (s.perfCourse || 0) * (on ? 1 : 0.25));
+    it.cm.uniforms.uHi.value = sel === it.d.id ? 1 : 0;
+  }
 }
 
 // ---------- 前哨淋巴結與廓清 ----------
@@ -954,7 +1053,7 @@ const BASE_STATE = {
   tumorAt: null, custom: [], keepGland: false, xray: false,
   aug: { plane: null, fill: 0, vis: 0, shapeR: 'round', shapeL: 'round' }, glandShell: 1, glandDetail: 0, hiGland: '', density: 1.5, fatOp: null, lymph: 0,
   gf: { tech: null, t: 0, vis: 0, arc: 0, zone: null }, wscars: [], woundAt: null, perfAt: null, paddleR: null, fatg: 0,
-  nodes: 0, dye: 0, flow: 0, slnGone: 0, clipGone: 0, gI: 0, gII: 0, probe: 0, drain: 0, clip: 0, hiNode: '', vesselsOnly: []
+  nodes: 0, dye: 0, flow: 0, slnGone: 0, clipGone: 0, gI: 0, gII: 0, probe: 0, drain: 0, clip: 0, hiNode: '', vesselsOnly: [], perfMap: 0, perfCourse: 0
 };
 function merge(a, b) {
   if (b === undefined) return structuredClone(a);
@@ -1132,6 +1231,8 @@ function applyState(inst, s, tweening = false) {
     setOpacity(m, op);
     if (m.material.uniforms) m.material.uniforms.uHi.value = s.hi.some((h) => m.name.startsWith(h)) ? 1 : 0;
   }
+  if (inst.abdFat) setOpacity(inst.abdFat, inst.abdFat.material.uniforms.uOpacity.value * (s.ghostSkin > 0.9 ? 1 : 0) * (1 - s.wound) * (peel > 0.02 ? 1 : 0));
+  updatePerfMap(inst, s);
   const deep = peel >= 1.5 || s.ghostSkin < 0.9 || s.ghostMus < 0.9;
   for (const [name, obj] of inst.byName) if (obj.userData.vessel) { obj.userData.mat.uniforms.uHi.value = s.vessels.includes(name) ? 1 : 0; obj.visible = deep && (!s.vesselsOnly.length || s.vesselsOnly.includes(name)) && (!LIMB_V.test(name) || s.vessels.includes(name) || s.vesselsOnly.includes(name)); }
   // 乳暈、皮島、傷口
@@ -1271,8 +1372,15 @@ const ui = {
   infoName: document.getElementById('infoName'), infoEn: document.getElementById('infoEn'), infoText: document.getElementById('infoText'), infoClin: document.getElementById('infoClin'),
   pros: document.getElementById('pros'), cons: document.getElementById('cons'), fit: document.getElementById('fit'), pcTitle: document.getElementById('pcTitle'), table: document.getElementById('cmpTable')
 };
-const app = { scn: 'bcs', cat: 'surgery', ovAll: false, step: 0, mode: 'single', peelOverride: null, tween: null, camTween: null, pick: null, cmp: { id: 'bcs_mast', opt: {}, free: false } };
+const app = { perfSel: null, scn: 'bcs', cat: 'surgery', ovAll: false, step: 0, mode: 'single', peelOverride: null, tween: null, camTween: null, pick: null, cmp: { id: 'bcs_mast', opt: {}, free: false } };
 
+// 連續剝層:介於兩層之間時顯示「上一層 → 下一層」與進度
+function peelLabel(v) {
+  const a = Math.floor(v + 1e-6), f = v - a;
+  if (f < 0.04 || a >= LAYER_NAMES.length - 1) return LAYER_NAMES[Math.min(a, LAYER_NAMES.length - 1)];
+  if (f > 0.96) return LAYER_NAMES[a + 1];
+  return `${LAYER_NAMES[a]} → ${LAYER_NAMES[a + 1]} ${Math.round(f * 100)}%`;
+}
 function el(tag, attrs = {}, text) { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text !== undefined) e.textContent = text; return e; }
 
 function buildUI() {
@@ -1294,7 +1402,10 @@ function buildUI() {
   ui.selA.addEventListener('change', free); ui.selB.addEventListener('change', free);
   ui.prev.addEventListener('click', () => goStep(app.step - 1));
   ui.next.addEventListener('click', () => goStep(app.step + 1));
-  ui.peel.addEventListener('input', () => { app.peelOverride = Number(ui.peel.value); ui.peelName.textContent = LAYER_NAMES[app.peelOverride]; for (const i of instances) { if (i.target) i.target.peel = app.peelOverride; } });
+  const setPeel = (v) => { app.peelOverride = v; ui.peelName.textContent = peelLabel(v); for (const i of instances) { if (i.target) i.target.peel = v; if (!i.tween && i.state) { i.state.peel = v; applyState(i, i.state); } } };
+  ui.peel.addEventListener('input', () => setPeel(Number(ui.peel.value)));
+  // 放開時靠近整數層就吸附
+  ui.peel.addEventListener('change', () => { const v = Number(ui.peel.value), r = Math.round(v); if (Math.abs(v - r) < 0.1) { ui.peel.value = String(r); setPeel(r); } });
   ui.mSingle.addEventListener('click', () => setMode('single'));
   ui.mCompare.addEventListener('click', () => setMode('compare'));
 }
@@ -1349,9 +1460,28 @@ function goStep(i, instant = false) {
   ui.prev.disabled = i === 0; ui.next.disabled = i === scn.steps.length - 1;
   app.peelOverride = null;
   const to = stepState(app.scn, i);
-  ui.peel.value = String(Math.round(to.peel)); ui.peelName.textContent = LAYER_NAMES[Math.round(to.peel)];
+  ui.peel.value = String(to.peel); ui.peelName.textContent = peelLabel(to.peel);
+  app.perfSel = null; renderPerfBox(to.perfMap > 0.5);
   transition(instances[0], to, instant ? 0 : (scn.steps[i].dur || 1300));
   flyTo(to.cam, instant);
+}
+
+// 穿通枝報告表(CTA 報告格式示意),點選列可單獨標示
+function renderPerfBox(show) {
+  const box = $('perfBox'); box.hidden = !show; box.innerHTML = ''; if (!show) return;
+  const t = el('table', { class: 'perftab' }); const hr = el('tr');
+  for (const h of ['', '位置', '距肚臍(cm)', '管徑', '肌內']) hr.append(el('th', {}, h));
+  const thead = el('thead'); thead.append(hr); t.append(thead); const tb = el('tbody');
+  for (const d of PERF_MAP) {
+    const tr = el('tr', { tabindex: '0', role: 'button', 'aria-pressed': String(app.perfSel === d.id) });
+    const side = d.side === 'R' ? '右' : '左';
+    tr.append(el('td', {}, d.id + (d.dom ? ' ★' : '')), el('td', {}, side + d.row.slice(0, 2)), el('td', {}, `外 ${d.dx}・${d.dy < 0 ? '下' : '上'} ${Math.abs(d.dy)}`), el('td', {}, d.dia + ' mm'), el('td', {}, d.im + ' cm'));
+    const pick = () => { app.perfSel = app.perfSel === d.id ? null : d.id; renderPerfBox(true); for (const i of instances) if (i.state) updatePerfMap(i, i.state); };
+    tr.addEventListener('click', pick); tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+    tb.append(tr);
+  }
+  t.append(tb); box.append(t);
+  box.append(el('p', { class: 'hint' }, '★ 預計使用的主要穿通枝。數值為衛教示意,實際以您的 CTA 報告為準。'));
 }
 
 function transition(inst, to, dur) {
@@ -1414,7 +1544,7 @@ function setupCompare(fly = false) {
   } else {
     const { res } = currentPreset(); cam = res.cam;
     a = presetState(res.a, cam, res.peel); b = presetState(res.b, cam, res.peel); la = res.a.label; lb = res.b.label;
-    app.peelOverride = null; ui.peel.value = String(res.peel || 0); ui.peelName.textContent = LAYER_NAMES[res.peel || 0];
+    app.peelOverride = null; ui.peel.value = String(res.peel || 0); ui.peelName.textContent = peelLabel(res.peel || 0);
   }
   transition(instances[0], a, 900); transition(instances[1], b, 900);
   ui.cmpA.textContent = 'A ' + la; ui.cmpB.textContent = 'B ' + lb;
