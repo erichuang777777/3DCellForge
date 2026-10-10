@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>乳房重建 3D 圖譜</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap">
+<style>
+/* Layout: 頁首 → 情境選單 → 3D 舞台(圖層、視角、模式控制) + 側欄(步驟/結構說明) → 優缺點 → 對照表 → 來源與授權 */
+:root {
+  --bg: #eef1ef;
+  --paper: #f7f5ef;
+  --surface: #ffffff;
+  --fg: #1f2a2c;
+  --muted: #5a6766;
+  --line: #d4dbd8;
+  --accent: #8a2f2a;
+  --accent-soft: #f3e3df;
+  --teal: #1f6a6f;
+  --ink: #2a211c;
+  --warn-bg: #fbefcc;
+  --warn-fg: #6b4a00;
+  --good: #2f6b3c;
+  --bad: #8a3a2a;
+  --font-display: "Noto Serif TC", "Songti TC", "PMingLiU", serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121716; --paper: #1b2120; --surface: #1d2423; --fg: #e7ecea; --muted: #a3b0ad; --line: #33403e;
+    --accent: #e08b80; --accent-soft: #3a2422; --teal: #6cc3c8; --ink: #e7ecea;
+    --warn-bg: #3a3016; --warn-fg: #f1d68e; --good: #8fd19c; --bad: #f0a48f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121716; --paper: #1b2120; --surface: #1d2423; --fg: #e7ecea; --muted: #a3b0ad; --line: #33403e;
+  --accent: #e08b80; --accent-soft: #3a2422; --teal: #6cc3c8; --ink: #e7ecea;
+  --warn-bg: #3a3016; --warn-fg: #f1d68e; --good: #8fd19c; --bad: #f0a48f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.65; margin: 0; padding-inline: 16px; padding-block: 20px 48px; }
+.wrap { max-width: 1240px; margin-inline: auto; display: flex; flex-direction: column; gap: 20px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; line-height: 1.3; text-wrap: balance; }
+h1 { font-size: 26px; }
+h2 { font-size: 19px; }
+h3 { font-size: 16px; }
+p { margin: 0; }
+a { color: var(--teal); }
+button { font: inherit; }
+
+.top { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: flex-start; justify-content: space-between; }
+.top > div { flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.sub { color: var(--muted); max-width: 66ch; }
+.badge { background: var(--warn-bg); color: var(--warn-fg); border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tab { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 7px 14px; cursor: pointer; font-size: 14px; min-height: 38px; }
+.tab small { color: var(--muted); margin-left: 4px; font-size: 12px; }
+.tab[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.tab[aria-pressed="true"] small { color: inherit; opacity: .85; }
+.tab:focus-visible, .ctl:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); } }
+
+.stagebox { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; min-width: 0; }
+#stage { display: block; width: 100%; height: min(72vh, 680px); min-height: 420px; touch-action: none; cursor: grab; }
+.overlay { position: absolute; display: flex; gap: 6px; flex-wrap: wrap; }
+.ov-top { top: 10px; left: 10px; right: 10px; justify-content: space-between; pointer-events: none; }
+.ov-top > * { pointer-events: auto; }
+.ctlgroup { display: inline-flex; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.ctl { border: 0; background: transparent; color: var(--muted); padding: 6px 11px; font-size: 13px; cursor: pointer; min-height: 34px; }
+.ctl + .ctl { border-left: 1px solid var(--line); }
+.ctl[aria-pressed="true"] { background: var(--teal); color: var(--surface); font-weight: 700; }
+.peel { position: absolute; right: 10px; bottom: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; width: min(300px, calc(100% - 20px)); }
+.peel label { font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.peel label b { color: var(--fg); }
+.peel input { width: 100%; accent-color: var(--accent); }
+.perfbox { margin: 8px 0 4px; overflow-x: auto; }
+.perftab { width: 100%; min-width: 0; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.perftab th, .perftab td { padding: 4px 5px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.perftab th { color: var(--muted); font-weight: 500; }
+.perftab tbody tr { cursor: pointer; }
+.perftab tbody tr:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.perftab tbody tr[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 18%, transparent); font-weight: 600; }
+.peel .ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.cmplabels { position: absolute; top: 56px; left: 0; right: 0; display: flex; pointer-events: none; }
+.cmplabels span { flex: 1; text-align: center; font-family: var(--font-display); font-weight: 700; color: var(--ink); font-size: 15px; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; background: var(--paper); }
+.callout { position: absolute; pointer-events: none; background: var(--surface); color: var(--fg); border: 1px solid var(--ink); border-radius: 6px; padding: 3px 8px; font-size: 12px; white-space: nowrap; transform: translate(-50%, -130%); }
+
+.side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.panel .eyebrow { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: .05em; }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.steps button { width: 100%; text-align: left; border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 8px; padding: 6px 8px; cursor: pointer; display: flex; gap: 8px; font-size: 14px; }
+.steps button .n { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 1.4em; }
+.steps button[aria-current="step"] { background: var(--accent-soft); color: var(--fg); border-color: var(--line); font-weight: 700; }
+.stepnav { display: flex; gap: 8px; }
+.stepnav button { flex: 1; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; padding: 7px; cursor: pointer; min-height: 38px; }
+.stepnav button.primary { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.steptext { font-size: 14px; }
+.info h3 { font-size: 17px; }
+.info .en { font-size: 12px; color: var(--muted); }
+.info .clin { font-size: 13px; background: var(--accent-soft); border-radius: 8px; padding: 8px 10px; }
+.hint { font-size: 13px; color: var(--muted); }
+
+.pc { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; }
+.pc ul { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.pc h3.good { color: var(--good); }
+.pc h3.bad { color: var(--bad); }
+.sect { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 860px; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+thead th { font-family: var(--font-display); font-size: 14px; border-bottom: 2px solid var(--accent); }
+tbody th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+tbody tr:hover { background: var(--accent-soft); }
+.todo { color: var(--muted); font-style: italic; }
+.src { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.note { font-size: 13px; color: var(--muted); max-width: 78ch; }
+.review { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+.sim .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.sim .lbl { font-size: 13px; color: var(--muted); }
+#clock { width: 100%; max-width: 280px; align-self: center; cursor: crosshair; touch-action: manipulation; }
+#clock .rim { fill: var(--accent-soft); stroke: var(--ink); stroke-width: 1.2; }
+#clock .are { fill: #c98a7c; opacity: .55; }
+#clock .num { font-size: 11px; fill: var(--muted); text-anchor: middle; dominant-baseline: middle; font-family: var(--font-body); }
+#clock .side { font-size: 11px; fill: var(--teal); font-weight: 700; text-anchor: middle; font-family: var(--font-body); }
+#clock .tum { fill: #6b4467; }
+#clock .exc { fill: none; stroke: #3f9c7a; stroke-width: 1.4; stroke-dasharray: 4 3; }
+#clock .inc { fill: none; stroke: #b0302a; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#clock .tick { stroke: var(--line); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+.grid2 label { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); min-width: 0; }
+.grid2 input, .grid2 select { font: inherit; font-size: 15px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-height: 38px; width: 100%; }
+.result { background: var(--bg); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.result .nums { display: flex; flex-wrap: wrap; gap: 6px 14px; font-variant-numeric: tabular-nums; }
+.result .nums b { font-size: 17px; color: var(--fg); }
+.result .nums span { color: var(--muted); font-size: 12px; display: flex; flex-direction: column; }
+.lv { display: inline-block; border-radius: 6px; padding: 2px 8px; font-weight: 700; font-size: 13px; }
+.lv1 { background: #dcefe0; color: #24603a; } .lv2 { background: var(--warn-bg); color: var(--warn-fg); } .lv3 { background: var(--accent-soft); color: var(--accent); }
+.result ul { margin: 0; padding-left: 1.1em; font-size: 13px; color: var(--muted); }
+.incisions { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 10px; margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.incisions legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
+.incisions h4 { margin: 6px 0 2px; font-size: 12px; color: var(--accent); letter-spacing: .04em; }
+.incisions label { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; padding: 3px 4px; border-radius: 6px; cursor: pointer; }
+.incisions label:hover { background: var(--accent-soft); }
+.incisions input { margin-top: 4px; accent-color: var(--accent); }
+.incisions .star { color: var(--accent); font-weight: 700; }
+.incisions small { color: var(--muted); }
+.incdesc { font-size: 13px; color: var(--muted); background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+.chk { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+details.doc { font-size: 13px; color: var(--muted); }
+details.doc summary { cursor: pointer; }
+details.doc .grid2 { margin-top: 8px; }
+.cats .tab { font-weight: 700; background: var(--bg); }
+.cats .tab[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: var(--surface); }
+.ovhead { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+#cmpTable td.nm { font-weight: 700; color: var(--fg); white-space: nowrap; }
+#cmpTable tr.cur td { background: var(--accent-soft); }
+.tab.simtab { border-style: dashed; border-color: var(--accent); color: var(--accent); }
+.tab.simtab[aria-pressed="true"] { border-style: solid; color: var(--surface); }
+.prof summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; list-style: none; }
+.prof summary::-webkit-details-marker { display: none; }
+.prof summary::before { content: "▸"; color: var(--muted); }
+.prof[open] summary::before { content: "▾"; }
+.prof summary small { color: var(--muted); font-size: 12px; }
+.prof { display: block; }
+.prof > * + * { margin-top: 10px; }
+.rng { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
+.rng span { display: flex; justify-content: space-between; gap: 8px; }
+.rng b { color: var(--fg); font-weight: 500; }
+.rng input { width: 100%; accent-color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 999px; padding: 5px 12px; font-size: 13.5px; cursor: pointer; min-height: 34px; }
+.chip[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: var(--surface); font-weight: 700; }
+.chip:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.cmp h3 { font-size: 15px; margin-top: 4px; }
+.cmp .optrow { display: flex; flex-direction: column; gap: 4px; }
+.cmp .optrow span { font-size: 12px; color: var(--muted); }
+table.diff { min-width: 0; font-size: 13px; }
+table.diff th { font-size: 13px; }
+table.diff td { width: 50%; }
+.xsec { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.xsec svg { width: 100%; height: auto; background: var(--paper); border-radius: 8px; border: 1px solid var(--line); }
+.xsec figcaption { font-size: 12px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>乳房重建 3D 圖譜</h1>
+      <p class="sub">用 3D 解剖模型看懂不同的乳癌手術與重建方式。拖曳旋轉、滾輪縮放,點選任何結構可看說明。</p>
+    </div>
+    <span class="badge">v0.12 草稿・待醫師審核</span>
+  </div>
+
+  <nav class="tabs cats" id="cats" aria-label="分類"></nav>
+  <nav class="tabs" id="tabs" aria-label="選擇手術情境"></nav>
+
+  <div class="main">
+    <div class="stagebox">
+      <canvas id="stage" aria-label="3D 解剖模型"></canvas>
+      <div class="overlay ov-top">
+        <div class="ctlgroup" role="group" aria-label="視角" id="views"></div>
+        <div class="ctlgroup" role="group" aria-label="模式">
+          <button class="ctl" id="m-single" aria-pressed="true">步驟</button>
+          <button class="ctl" id="m-compare" aria-pressed="false">並排比較</button>
+        </div>
+      </div>
+      <div class="cmplabels" id="cmplabels" hidden><span id="cmpA"></span><span id="cmpB"></span></div>
+      <div class="peel">
+        <label for="peel">剝開到 <b id="peelName">皮膚</b></label>
+        <input id="peel" type="range" min="0" max="4" step="0.01" value="0">
+        <div class="ticks"><span>皮膚</span><span>脂肪</span><span>乳腺</span><span>肌肉</span><span>骨骼</span></div>
+      </div>
+      <div class="callout" id="callout" hidden></div>
+      <div class="loading" id="loading">載入解剖模型中…</div>
+    </div>
+
+    <aside class="side">
+      <details class="panel prof" id="profPanel" open>
+        <summary><span class="eyebrow">病人條件</span> <b>先設定乳房外形</b> <small id="pfSum"></small></summary>
+        <p class="hint">所有情境、比較與腫瘤模擬都會套用這組設定。</p>
+        <div class="ctlgroup" role="group" aria-label="輸入方式" id="pfMode">
+          <button class="ctl" data-mode="cup" aria-pressed="true">罩杯快選</button>
+          <button class="ctl" data-mode="meas" aria-pressed="false">輸入量測值</button>
+        </div>
+        <div class="grid2" id="pfCupBox">
+          <label for="pfCup">罩杯<select id="pfCup">
+            <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option><option value="E">E</option><option value="F">F</option>
+          </select></label>
+        </div>
+        <div id="pfMeasBox" hidden>
+          <div class="grid2">
+            <label for="pfH">身高(cm)<input id="pfH" type="number" min="130" max="200" step="1" inputmode="decimal"></label>
+            <label for="pfW">體重(kg)<input id="pfW" type="number" min="30" max="160" step="0.5" inputmode="decimal"></label>
+            <label for="pfUB">下胸圍(cm)<input id="pfUB" type="number" min="60" max="130" step="0.5" inputmode="decimal"></label>
+            <label for="pfB">上胸圍(cm)<input id="pfB" type="number" min="65" max="160" step="0.5" inputmode="decimal"></label>
+            <label for="pfSNN">胸骨上切跡到乳頭(cm)<input id="pfSNN" type="number" min="14" max="40" step="0.5" inputmode="decimal"></label>
+            <label for="pfNN">兩乳頭間距(cm)<input id="pfNN" type="number" min="14" max="32" step="0.5" inputmode="decimal"></label>
+            <label for="pfIMD">兩乳房內緣間距(cm)<input id="pfIMD" type="number" min="0.5" max="8" step="0.5" inputmode="decimal"></label>
+            <label for="pfSNU">胸骨上切跡到肚臍(cm)<input id="pfSNU" type="number" min="25" max="60" step="0.5" inputmode="decimal"></label>
+          </div>
+          <button class="chip" id="pfIdeal" type="button">乳頭位置套用美學比例</button>
+          <p class="hint" id="pfCalc"></p>
+        </div>
+        <div class="grid2">
+          <label for="pfAge">年齡<select id="pfAge">
+            <option value="y">35 歲以下</option><option value="m">35–50 歲</option><option value="o">50–65 歲</option><option value="e">65 歲以上</option>
+          </select></label>
+          <label for="pfRatio">上下極比例<select id="pfRatio">
+            <option value="0.45">亞洲常見 45:55</option><option value="0.55">歐美偏好 55:45</option><option value="custom">自訂</option>
+          </select></label>
+        </div>
+        <label class="rng" for="pfPt"><span>下垂程度 <b id="pfPtV"></b></span><input id="pfPt" type="range" min="0" max="3" step="0.1"></label>
+        <label class="rng" for="pfUp" id="pfUpWrap" hidden><span>上極比例 <b id="pfUpV"></b></span><input id="pfUp" type="range" min="0.35" max="0.6" step="0.01"></label>
+        <label class="rng" for="pfFull"><span>上半部飽滿度 <b id="pfFullV"></b></span><input id="pfFull" type="range" min="0" max="1" step="0.05"></label>
+        <p class="hint" id="pfMeas" aria-live="polite"></p>
+      </details>
+      <section class="panel cmp" id="cmpPanel" hidden>
+        <span class="eyebrow">並排比較</span>
+        <h2>1. 選比較主題</h2>
+        <div class="chips" id="cmpPresets" role="group" aria-label="比較主題"></div>
+        <div id="cmpOpts"></div>
+        <p class="steptext" id="cmpText"></p>
+        <div class="tablewrap"><table class="diff" id="cmpDiff"></table></div>
+        <figure class="xsec" id="cmpSection" hidden></figure>
+        <details class="doc" id="cmpFree">
+          <summary>自選:左右各選一個術式結果</summary>
+          <div class="grid2">
+            <label for="selA">左側<select id="selA"></select></label>
+            <label for="selB">右側<select id="selB"></select></label>
+          </div>
+        </details>
+      </section>
+      <section class="panel sim" id="simPanel" hidden>
+        <span class="eyebrow">個人化模擬</span>
+        <h2>模擬我的腫瘤</h2>
+        <p class="hint">依影像或病理報告輸入。位置以「面對病人」的鐘面表示,也可以直接點下方圖。乳房大小、下垂與上下極比例請在上方「病人條件」設定。</p>
+        <div class="row">
+          <span class="lbl">側別</span>
+          <div class="ctlgroup" role="group" aria-label="側別" id="simSide">
+            <button class="ctl" data-side="L" aria-pressed="true">左乳</button>
+            <button class="ctl" data-side="R" aria-pressed="false">右乳</button>
+          </div>
+        </div>
+        <svg id="clock" viewBox="-118 -118 236 236" role="img" aria-label="乳房鐘面位置圖"></svg>
+        <div class="grid2">
+          <label for="simHour">鐘點<select id="simHour"></select></label>
+          <label for="simDist">距乳頭(cm)<input id="simDist" type="number" min="0" max="12" step="0.5" inputmode="decimal"></label>
+          <label for="simSize">腫瘤大小(cm)<input id="simSize" type="number" min="0.3" max="10" step="0.1" inputmode="decimal"></label>
+        </div>
+        <div class="result" id="simResult" aria-live="polite"></div>
+        <div class="row">
+          <span class="lbl">檢視</span>
+          <div class="ctlgroup" role="group" aria-label="檢視" id="simViews">
+            <button class="ctl" data-view="pre" aria-pressed="true">術前規劃</button>
+            <button class="ctl" data-view="post" aria-pressed="false">單純切除後</button>
+            <button class="ctl" data-view="onco" aria-pressed="false">腫瘤整形後</button>
+          </div>
+        </div>
+        <label class="chk" id="simSymWrap"><input type="checkbox" id="simSym"> 對側一起做對稱手術</label>
+        <fieldset class="incisions" id="simInc"><legend>刀口選擇 <small>★ 為依位置建議</small></legend></fieldset>
+        <details class="doc">
+          <summary>醫師設定</summary>
+          <div class="grid2">
+            <label for="cfgMargin">安全邊界(cm)<input id="cfgMargin" type="number" min="0" max="3" step="0.1"></label>
+            <label for="cfgL1">Level I 上限(%)<input id="cfgL1" type="number" min="5" max="60" step="1"></label>
+            <label for="cfgL2">Level II 上限(%)<input id="cfgL2" type="number" min="10" max="90" step="1"></label>
+          </div>
+          <p class="hint">罩杯體積對照與刀口規則在 oncoplasty.js。</p>
+        </details>
+      </section>
+      <section class="panel" id="stepPanel">
+        <span class="eyebrow" id="scnTag"></span>
+        <h2 id="scnName"></h2>
+        <p class="hint" id="scnOne"></p>
+        <ol class="steps" id="steps"></ol>
+        <p class="steptext" id="stepText"></p>
+        <div class="perfbox" id="perfBox" hidden></div>
+        <div class="stepnav">
+          <button id="prev">上一步</button>
+          <button id="next" class="primary">下一步</button>
+        </div>
+      </section>
+      <section class="panel info" id="info">
+        <span class="eyebrow">結構說明</span>
+        <h3 id="infoName">點選模型上的結構</h3>
+        <span class="en" id="infoEn"></span>
+        <p id="infoText" class="hint">例如點肌肉、肋骨、血管或乳腺,這裡會顯示白話說明與臨床重點。</p>
+        <p class="clin" id="infoClin" hidden></p>
+      </section>
+    </aside>
+  </div>
+
+  <section class="sect" id="pcSect">
+    <h2 id="pcTitle">優點與限制</h2>
+    <div class="pc">
+      <div><h3 class="good">優點</h3><ul id="pros"></ul></div>
+      <div><h3 class="bad">限制與風險</h3><ul id="cons"></ul></div>
+      <div><h3>較適合的情況</h3><ul id="fit"></ul></div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="row ovhead"><h2 id="ovTitle">術式總覽</h2><button class="tab" id="ovAll" aria-pressed="false">顯示全部術式</button></div>
+    <div class="tablewrap"><table id="cmpTable"></table></div>
+    <p class="note">發生率、住院天數與健保或自費項目尚未填入,請審核醫師依院內資料補上。</p>
+  </section>
+
+  <section class="sect">
+    <h2>模型來源、授權與參考資料</h2>
+    <p class="note">骨骼、肌肉、大網膜與血管路徑取自 Z-Anatomy(源自 BodyParts3D),已減面並轉為網頁格式。體表皮膚為 MakeHuman 的成年女性身體(CC0),已對齊到同一套骨骼座標;內部骨骼肌肉仍來自成年男性模型。乳房、乳腺、皮下脂肪、腫瘤、皮瓣與假體為依解剖位置另行建模的示意。本頁的 3D 模型依 CC BY-SA 4.0 授權釋出。</p>
+    <ul class="src">
+      <li>Z-Anatomy, The libre 3D atlas of anatomy, <a href="https://github.com/Z-Anatomy/Models-of-human-anatomy">CC BY-SA 4.0</a></li>
+      <li>MakeHuman 基底網格與形狀參數(MPFB2),<a href="https://github.com/makehumancommunity/mpfb2">CC0 1.0</a></li>
+      <li>乳房外形以 liRBSM 平均乳房形狀(Weiherer et al.,<a href="https://github.com/mweiherer/local-irbsm">MIT</a>)的側面剖面校正;乳頭位置的美學比例參考 Hwang et al., Arch Plast Surg 2015;42:226</li>
+      <li>BodyParts3D, © The Database Center for Life Science, <a href="https://dbarchive.biosciencedbc.jp/en/bodyparts3d/download.html">原始資料</a>(Mitsuhashi et al., Nucleic Acids Res 2009)</li>
+      <li>保留乳房手術:<a href="https://www.cancer.org/cancer/breast-cancer/treatment/surgery-for-breast-cancer/breast-conserving-surgery-lumpectomy.html">American Cancer Society</a>、<a href="https://www.moffitt.org/endeavor/archive/lumpectomy-vs-mastectomy/">Moffitt</a></li>
+      <li>背闊肌局部重建:<a href="https://doaj.org/article/e82a91c95d0a4cfd9176c50c6a45ce6f">Plast Reconstr Surg Glob Open 2024</a></li>
+      <li>大網膜皮瓣:<a href="https://link.springer.com/article/10.1245/s10434-014-3907-z">Ann Surg Oncol 2014</a>、<a href="https://jcancer.org/v9p1782.htm">J Cancer 2018 系統性回顧</a></li>
+      <li>TRAM 與 DIEP:<a href="https://mayoclinic.org/tests-procedures/breast-reconstruction-flap/multimedia/pedicle-tram-flap/img-20005834">Mayo Clinic</a>、<a href="https://e-aaps.org/journal/view.php?number=631">Arch Aesthetic Plast Surg</a></li>
+      <li>假體重建:<a href="https://www.mayoclinic.org/what-you-can-expect/rec-20271742">Mayo Clinic</a>、<a href="https://www.breastcancer.org/treatment/surgery/breast-reconstruction/tissue-expanders">Breastcancer.org</a></li>
+    </ul>
+    <div class="review">
+      <span>審核醫師:__________</span>
+      <span>版本:v0.12 草稿</span>
+      <span>審核日期:__________</span>
+    </div>
+    <p class="note">本頁為衛教用示意,不是個人治療建議,也不代表手術後的實際外觀。實際選擇請依主治醫師評估。</p>
+  </section>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

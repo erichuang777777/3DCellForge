@@ -183,3 +183,7 @@ Library 面板内置了远程 Khronos glTF Sample Models 作为辅助参考，�
 ## License
 
 MIT
+
+## 乳房重建 3D 圖譜(病人衛教)
+
+`public/breast-reconstruction-atlas/` 是獨立的 Three.js 頁面,以解剖圖譜風格說明保留乳房與全切,以及背闊肌、大網膜、帶蒂 TRAM、DIEP、假體五種重建方式,支援逐層剝開、手術步驟動畫、並排比較與點選說明,並可輸入腫瘤側別、鐘點、距乳頭距離、大小與乳房大小,模擬切除比例、建議刀口與術後外觀(網址加 `#sim` 直接開啟;臨床規則在 `oncoplasty.js`)。執行 `npm run dev` 後開啟 `/breast-reconstruction-atlas/`。解剖模型來自 Z-Anatomy / BodyParts3D(CC BY-SA 4.0,見該資料夾的 `ATTRIBUTION.md`);`content.js` 的臨床內容為待醫師審核的草稿。

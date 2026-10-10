@@ -183,3 +183,7 @@ Do not put real API keys in frontend code. Keep secrets in `.env.local`, which i
 ## License
 
 MIT
+
+## Breast Reconstruction Atlas (patient education)
+
+`public/breast-reconstruction-atlas/` is a standalone Three.js page that explains breast-conserving surgery vs mastectomy and five reconstruction options (latissimus dorsi, omental flap, pedicled TRAM, DIEP, implant) with an atlas-style shader, layer peeling, step animations, side-by-side comparison, clickable structure notes, and a personal tumor simulator (side, clock position, distance, size, breast volume → excision ratio, recommended incisions, and post-op shape). Open `/breast-reconstruction-atlas/#sim` to go straight to the simulator; its clinical rules live in `oncoplasty.js`. Run `npm run dev` and open `/breast-reconstruction-atlas/`. Anatomy comes from Z-Anatomy / BodyParts3D (CC BY-SA 4.0, see `ATTRIBUTION.md` in that folder); clinical text in `content.js` is a draft pending physician review.
