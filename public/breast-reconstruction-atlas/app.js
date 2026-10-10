@@ -253,42 +253,65 @@ function sideFrame(s) {
   return { s, f };
 }
 
-// ---------- 病人條件:罩杯、年齡、下垂程度、上下極比例 ----------
-const CUP_ML = { A: 250, B: 350, C: 450, D: 600, E: 750 };
+// ---------- 病人條件:量測值(或罩杯快選)、年齡、下垂程度、上下極比例 ----------
+// 罩杯 = 上胸圍 − 下胸圍(台灣/日本尺碼,每 2.5 cm 一級)
+const CUP_D = { A: 10, B: 12.5, C: 15, D: 17.5, E: 20, F: 22.5 };
+const cupOf = (d) => { const ks = Object.keys(CUP_D); let best = ks[0]; for (const k of ks) if (Math.abs(CUP_D[k] - d) < Math.abs(CUP_D[best] - d)) best = k; return d < 8.75 ? 'AA' : d > 23.75 ? 'G+' : best; };
 // 預設略為美化(較挺、上半部較飽滿),讓病人看到的外形有心理支持;仍可在面板調整
 const AGE_DEF = { y: { pt: 0.3, full: 0.7 }, m: { pt: 0.6, full: 0.6 }, o: { pt: 1.2, full: 0.45 }, e: { pt: 1.8, full: 0.35 } };
-const PROFILE = { cup: 'C', ml: 450, age: 'm', pt: 0.6, ratio: 0.45, full: 0.6, ver: 0 };
-const profVol = () => (PROFILE.cup === 'custom' ? PROFILE.ml : CUP_ML[PROFILE.cup]);
-const profSc = () => Math.min(Math.max(Math.cbrt(profVol() / 450), 0.75), 1.3);
+const PROFILE = { mode: 'cup', cup: 'C', age: 'm', pt: 0.6, ratio: 0.45, full: 0.6, ver: 0,
+  height: 160, weight: 55, underbust: 75, bust: 90, snn: 19, nn: 19, imd: 3 };
 const smooth = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
+const clampN = (v, a, b) => Math.min(Math.max(v, a), b);
+// 量測值(cm)。罩杯快選時,其他距離用該罩杯的常見值
+function measures() {
+  if (PROFILE.mode === 'meas') {
+    return { d: clampN(PROFILE.bust - PROFILE.underbust, 5, 30), ub: clampN(PROFILE.underbust, 60, 120), snn: clampN(PROFILE.snn, 14, 40), nn: clampN(PROFILE.nn, 14, 32), imd: clampN(PROFILE.imd, 0.5, 8) };
+  }
+  const d = CUP_D[PROFILE.cup] ?? 15;
+  return { d, ub: 75, snn: 18 + (d - 12.5) * 0.3, nn: 18.5 + (d - 12.5) * 0.15, imd: 3 };
+}
+const bmi = () => PROFILE.weight / (PROFILE.height / 100) ** 2;
 
-// 狀態中的乳房參數 + 病人條件 → 實際幾何。abs:數值已含大小(模擬器用);pt:絕對下垂程度(0–3);ptosis:相對病人的倍數
+// 狀態中的乳房參數 + 病人條件 → 實際幾何。P、sc 為相對預設乳房的倍數;pt:絕對下垂程度(0–3);ptosis:相對病人的倍數
 const GEO = new Map();
-const VOL_K = 0.82;
+const NOTCH_Y = 1.41, C_X = 0.097, C_Y = 1.252; // 胸骨上切跡高度、乳房區域中心(模型座標)
 function geomOf(p) {
-  const k = profSc();
-  const key = JSON.stringify([p.P, p.Pabs, p.abs, p.sc, p.shape, p.lift, p.pt, p.ptosis, p.upper, p.ratio, PROFILE.ver]);
+  const key = JSON.stringify([p.P, p.Pabs, p.sc, p.shape, p.lift, p.pt, p.ptosis, p.upper, p.ratio, PROFILE.ver]);
   let g = GEO.get(key); if (g) return g;
-  const sc = p.abs ? (p.sc || 1) : (p.sc || 1) * k;
-  // VOL_K:讓 C 罩杯模型體積約 450 mL(以數值積分校正)
-  const P = p.Pabs ?? (p.abs ? p.P : p.P * k) * (p.shape === 'round' ? 1 : VOL_K);
-  const round = p.shape === 'round';
+  const M = measures(); const sc = p.sc || 1; const round = p.shape === 'round';
+  // 突度由上下胸圍差決定;基底寬度由下胸圍(胸廓大小)決定
+  const P = p.Pabs ?? (p.P / 0.064) * M.d * 0.0036 * sc;
+  const W = clampN(M.ub * 0.17, 10, 20) / 100 * sc;
   let pt = p.pt ?? PROFILE.pt * (p.ptosis ?? 1);
   if (round) pt = Math.min(pt, 0.2);
   const full = round ? 0.95 : p.upper != null ? 0.35 + p.upper : PROFILE.full;
   const ratio = p.ratio ?? PROFILE.ratio;
-  const top = 0.07 * sc, bot = -0.066 * sc, H = top - bot;
   const lift = p.lift || 0;
-  const uN = 0.006 * sc;
-  // 乳頭把乳房基底的高度分成上極:下極 = ratio:(1 - ratio)(未下垂時)
-  const wN = top - ratio * H + lift;
-  g = { P, sc, pt, full, ratio, top, bot, wN, uN, shape: p.shape, round, Rup: top - wN, Rlo: wN - bot, Rlat: 0.082 * sc - uN, Rmed: 0.056 * sc + uN,
-    aU: 1.4 - 0.65 * full, dropA: p.shape === 'natural' && P > 0.0005 ? (0.01 + 0.036 * pt) * sc * Math.min(P / (0.064 * sc), 1.4) * (1 - Math.min(lift / 0.02, 0.6)) : 0 };
+  // 乳頭位置:乳頭間距決定左右,胸骨上切跡到乳頭距離決定高度
+  const xN = M.nn / 200; const uN = xN - C_X;
+  const yV = NOTCH_Y - Math.sqrt(Math.max((M.snn / 100) ** 2 - xN ** 2, 0.0025));
+  const Rmed = clampN(xN - M.imd / 200, 0.04, W * 0.75); const Rlat = Math.max(W - Rmed, 0.045);
+  const H = W * 0.95; const Rup = ratio * H, Rlo = (1 - ratio) * H;
+  const soft = PROFILE.mode === 'meas' ? clampN(1 + 0.04 * (bmi() - 25), 0.9, 1.4) : 1;
+  const dropA = p.shape === 'natural' && P > 0.0005 ? soft * (0.01 + 0.036 * pt) * Math.sqrt(W / 0.1275) * Math.min(P / 0.054, 1.4) * (1 - Math.min(lift / 0.02, 0.6)) : 0;
+  // 量測模式:量到的乳頭高度已含下垂,基底往上補回;罩杯快選:量測值代表未下垂,下垂時乳頭往下
+  let wN = yV - C_Y + lift + (PROFILE.mode === 'meas' ? 0.85 * dropA : 0);
+  wN = Math.min(wN, NOTCH_Y - 0.055 - C_Y - Rup); // 乳房上緣不超過約第二肋
+  g = { P, sc: W / 0.1275, pt, full, ratio, top: wN + Rup, bot: wN - Rlo, wN, uN, shape: p.shape, round, Rup, Rlo, Rlat, Rmed, aU: 1.4 - 0.65 * full, dropA };
   g.wV = g.wN - 0.85 * g.dropA; // 下垂後看到的乳頭高度(基底座標)
   // 下垂時乳頭沿乳房表面往下、往外滑,朝向外下方
-  const slide = g.round ? 0 : Math.max(pt - 0.8, 0); g.nU = g.uN + 0.004 * slide * sc; g.nW = g.wN - 0.0075 * slide * sc;
+  const slide = g.round ? 0 : Math.max(pt - 0.8, 0); g.nU = g.uN + 0.004 * slide * g.sc; g.nW = g.wN - 0.0075 * slide * g.sc;
   if (GEO.size > 400) GEO.clear();
   GEO.set(key, g); return g;
+}
+// 預設乳房(病人條件)的估計體積(mL),以數值積分
+let VOL = { ver: -1, ml: 0 };
+function estVolume() {
+  if (VOL.ver === PROFILE.ver) return VOL.ml;
+  const g = geomOf(BASE_STATE.R); const p = { ...BASE_STATE.R, g, areola: false }; const h = 0.002; let v = 0;
+  for (let u = g.uN - g.Rmed; u <= g.uN + g.Rlat; u += h) for (let w = g.bot; w <= g.top; w += h) v += Math.max(breastField(u, w, p).D, 0) * h * h;
+  VOL = { ver: PROFILE.ver, ml: v * 1e6 }; return VOL.ml;
 }
 // 四個方向的半徑平滑過渡(避免在乳頭十字方向出現摺痕)
 const rBlend = (v, a, b, sc) => a + (b - a) * smooth(-0.025 * sc, 0.025 * sc, v);
@@ -310,7 +333,7 @@ function profile(du, dw, g) {
 function breastField(du, dw, p) {
   const g = p.g || geomOf(p);
   let D = profile(du, dw, g);
-  if (p.areola && g.P > 0.02) {
+  if (p.areola && g.P > 0.008) {
     const dn2 = (du - g.nU - (p.nsu || 0)) ** 2 + (dw - g.nW - (p.nsw || 0)) ** 2;
     D += 0.004 * Math.exp(-dn2 / (2 * 0.0045 ** 2));
   }
@@ -333,6 +356,8 @@ function breastField(du, dw, p) {
   return { D, drop };
 }
 // 乳頭在局部座標的位置(含移位)
+// 乳頭乳暈的小隆起
+function nipBump(du, dw, p, g) { if (!p.areola) return 0; const dn2 = (du - g.nU - (p.nsu || 0)) ** 2 + (dw - g.nW - (p.nsw || 0)) ** 2; return 0.004 * Math.exp(-dn2 / (2 * 0.0045 ** 2)); }
 function nipLocal(p) { const g = geomOf(p); return [g.nU + (p.nsu || 0), g.nW + (p.nsw || 0)]; }
 
 function prepBreastRegions(skinGeom) {
@@ -778,8 +803,9 @@ function buildFatDrops(inst) {
 
 // ---------- 乳腺細部構造(右乳,程式建模示意) ----------
 function hash1(n) { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
-function basePointInterp(inst, key, u, w) {
-  const reg = inst.regions[key]; const base = inst.skin.userData.base; const best = [];
+// 在乳房區域內以最近 4 個頂點內插位置(arr 不給時用原始未變形的位置)
+function basePointInterp(inst, key, u, w, arr) {
+  const reg = inst.regions[key]; const base = arr || inst.skin.userData.base; const best = [];
   for (let k = 0; k < reg.idx.length; k++) {
     const d = (reg.du[k] - u) ** 2 + (reg.dw[k] - w) ** 2;
     if (best.length < 4 || d < best[3][0]) { best.push([d, k]); best.sort((a, b) => a[0] - b[0]); if (best.length > 4) best.pop(); }
@@ -964,7 +990,7 @@ function prepareFrom(from, to) {
 // ---------- 假體尺寸與位置 ----------
 // 體積(mL)→ 底寬、突度(公尺);為圓形中突度假體的近似值,待醫師依常用型號修改
 function implDims(ml) { return { W: 0.1 + (0.012 * (ml - 200)) / 100, proj: 0.032 + (0.006 * (ml - 200)) / 100 }; }
-const defImplMl = () => Math.round((350 * profVol()) / 450 / 25) * 25;
+const defImplMl = () => Math.round((estVolume() * 0.8) / 25) * 25;
 const PLANE_OFF = { pre: 0.002, subglandular: 0.002, dual: -0.006, sub: -0.011 };
 const PLANE_COVER = { pre: 0.007, subglandular: 0.009, dual: 0.009, sub: 0.013 };
 function implantPose(inst, side, s) {
@@ -1037,13 +1063,16 @@ function updateBreasts(inst, s) {
     let maxD = -1, maxI = -1; let top = -1e9, low = 1e9;
     for (let j = 0; j < reg.idx.length; j++) {
       const i = reg.idx[j]; let { D, drop } = breastField(reg.du[j], reg.dw[j], p); const wk = reg.wt[j]; D *= wk; drop *= wk;
-      if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); D = Math.max(D, need); }
+      if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D) D = need + nipBump(reg.du[j], reg.dw[j], p, g); }
       arr[i * 3] += f.x * D; arr[i * 3 + 1] += f.y * D - drop; arr[i * 3 + 2] += f.z * D;
       const dn = (reg.du[j] - nu) ** 2 + (reg.dw[j] - nw) ** 2;
       if (D > 0.01 && dn < 0.0004 && D - dn * 20 > maxD) { maxD = D - dn * 20; maxI = i; }
       if (Math.abs(reg.du[j] - nu) < 0.012 && g.P > 0.01) { const y = arr[i * 3 + 1]; if (D > 0.33 * g.P && y > top) top = y; if (D > 0.05 * g.P && y < low) low = y; }
     }
-    const nip = maxI >= 0 ? new THREE.Vector3(arr[maxI * 3], arr[maxI * 3 + 1], arr[maxI * 3 + 2]) : null;
+    // 乳頭位置直接由公式算出(不靠尋找最突出的頂點,切換時不會消失)
+    let nip = null;
+    if (g.P > 0.004) nip = basePointInterp(inst, key, nu, nw, arr);
+    else if (maxI >= 0) nip = new THREE.Vector3(arr[maxI * 3], arr[maxI * 3 + 1], arr[maxI * 3 + 2]);
     inst.nipple[key] = nip && p.areola ? nip : null;
     // 模型實測:上極(乳房上緣到乳頭)與下極(乳頭到最低點)的垂直比例
     if (nip && top > low) inst.meas[key] = { up: (top - nip.y) / (top - low), imf: reg.c.y + g.bot - nip.y };
@@ -1052,7 +1081,7 @@ function updateBreasts(inst, s) {
       const m = inst.byName.get(part + key); const gm = m.geometry; const pa = gm.attributes.position.array; const { src, regionK } = gm.userData;
       for (let v = 0; v < src.length; v++) {
         const i = src[v], j = regionK[v]; let { D, drop } = breastField(reg.du[j], reg.dw[j], p); D *= reg.wt[j]; drop *= reg.wt[j];
-        if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); D = Math.max(D, need); }
+        if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D) D = need + nipBump(reg.du[j], reg.dw[j], p, g); }
         const d = Math.max(D * scale + off, -0.003);
         pa[v * 3] = base[i * 3] + f.x * d; pa[v * 3 + 1] = base[i * 3 + 1] + f.y * d - drop * scale; pa[v * 3 + 2] = base[i * 3 + 2] + f.z * d;
       }
@@ -1453,10 +1482,13 @@ function sectionSVG(ml) {
 // ---------- 病人條件面板 ----------
 const PT_ZH = ['挺', '略垂', '輕度', '輕到中度', '中度', '中到重度', '重度'];
 function buildProfileUI() {
-  $('pfCup').value = PROFILE.cup; $('pfMl').value = PROFILE.ml; $('pfAge').value = PROFILE.age; $('pfPt').value = PROFILE.pt; $('pfUp').value = PROFILE.ratio; $('pfFull').value = PROFILE.full;
+  const F = { pfH: 'height', pfW: 'weight', pfUB: 'underbust', pfB: 'bust', pfSNN: 'snn', pfNN: 'nn', pfIMD: 'imd' };
+  $('pfCup').value = PROFILE.cup; $('pfAge').value = PROFILE.age; $('pfPt').value = PROFILE.pt; $('pfUp').value = PROFILE.ratio; $('pfFull').value = PROFILE.full;
+  for (const [id, k] of Object.entries(F)) $(id).value = PROFILE[k];
   let timer = null; const later = () => { clearTimeout(timer); timer = setTimeout(profileChanged, 180); renderProfile(); };
-  $('pfCup').addEventListener('change', () => { PROFILE.cup = $('pfCup').value; $('pfMlWrap').hidden = PROFILE.cup !== 'custom'; later(); });
-  $('pfMl').addEventListener('input', () => { const v = Number($('pfMl').value); if (v >= 100 && v <= 2000) { PROFILE.ml = v; later(); } });
+  for (const b of $('pfMode').children) b.addEventListener('click', () => { PROFILE.mode = b.dataset.mode; later(); });
+  $('pfCup').addEventListener('change', () => { PROFILE.cup = $('pfCup').value; later(); });
+  for (const [id, k] of Object.entries(F)) $(id).addEventListener('input', () => { const v = Number($(id).value); if (Number.isFinite(v) && v >= Number($(id).min) && v <= Number($(id).max)) { PROFILE[k] = v; later(); } });
   $('pfAge').addEventListener('change', () => { PROFILE.age = $('pfAge').value; const d = AGE_DEF[PROFILE.age]; PROFILE.pt = d.pt; PROFILE.full = d.full; $('pfPt').value = d.pt; $('pfFull').value = d.full; later(); });
   $('pfRatio').addEventListener('change', () => { const v = $('pfRatio').value; $('pfUpWrap').hidden = v !== 'custom'; if (v !== 'custom') { PROFILE.ratio = Number(v); PROFILE.full = v === '0.55' ? Math.max(PROFILE.full, 0.7) : AGE_DEF[PROFILE.age].full; $('pfUp').value = PROFILE.ratio; $('pfFull').value = PROFILE.full; } later(); });
   $('pfPt').addEventListener('input', () => { PROFILE.pt = Number($('pfPt').value); later(); });
@@ -1465,18 +1497,22 @@ function buildProfileUI() {
   renderProfile();
 }
 function renderProfile() {
+  const meas = PROFILE.mode === 'meas';
+  for (const b of $('pfMode').children) b.setAttribute('aria-pressed', String(b.dataset.mode === PROFILE.mode));
+  $('pfCupBox').hidden = meas; $('pfMeasBox').hidden = !meas;
+  const M = measures(); const cup = meas ? cupOf(M.d) : PROFILE.cup;
+  $('pfCalc').textContent = `上下胸圍差 ${fmt(M.d)} cm,約 ${cup} 罩杯(下胸圍 ${fmt(M.ub)});BMI ${fmt(bmi())}。同樣罩杯,下胸圍越大乳房越寬;BMI 較高時組織較軟、較容易下垂。`;
   $('pfPtV').textContent = PT_ZH[Math.round(PROFILE.pt * 2)] ?? '';
   $('pfUpV').textContent = `${Math.round(PROFILE.ratio * 100)}:${100 - Math.round(PROFILE.ratio * 100)}`;
   $('pfFullV').textContent = PROFILE.full < 0.3 ? '較扁(凹)' : PROFILE.full < 0.6 ? '平直' : '飽滿(凸)';
-  const cup = PROFILE.cup === 'custom' ? `${PROFILE.ml} mL` : `${PROFILE.cup} 罩杯`;
-  $('pfSum').textContent = `${cup}・${$('pfAge').selectedOptions[0].textContent}・上下極 ${Math.round(PROFILE.ratio * 100)}:${100 - Math.round(PROFILE.ratio * 100)}`;
+  $('pfSum').textContent = `${meas ? `${fmt(M.ub)}${cup}` : `${cup} 罩杯`}・${$('pfAge').selectedOptions[0].textContent}・上下極 ${Math.round(PROFILE.ratio * 100)}:${100 - Math.round(PROFILE.ratio * 100)}`;
 }
 // 模型實測(以未手術側為準)
 function renderMeas() {
   const m = instances[0]?.meas; const v = m?.L || m?.R; if (!v) { $('pfMeas').textContent = ''; return; }
   const up = Math.round(v.up * 100); const d = -v.imf * 100; // 乳頭高於下皺褶為正
   const grade = d > 1 ? '無下垂' : d >= -1 ? '第一度下垂' : d >= -3 ? '第二度下垂' : '第三度下垂';
-  $('pfMeas').textContent = `模型目前:上極 ${up}%・下極 ${100 - up}%;乳頭${Math.abs(d) <= 1 ? '約在乳房下皺褶高度' : d > 0 ? `高於乳房下皺褶 ${d.toFixed(1)} cm` : `低於乳房下皺褶 ${(-d).toFixed(1)} cm`}(約${grade},Regnault 分級)。`;
+  $('pfMeas').textContent = `模型目前:上極 ${up}%・下極 ${100 - up}%;乳頭${Math.abs(d) <= 1 ? '約在乳房下皺褶高度' : d > 0 ? `高於乳房下皺褶 ${d.toFixed(1)} cm` : `低於乳房下皺褶 ${(-d).toFixed(1)} cm`}(約${grade},Regnault 分級)。估計單側乳房體積約 ${Math.round(estVolume() / 10) * 10} mL。`;
 }
 function profileChanged() {
   PROFILE.ver++; GEO.clear();
@@ -1526,7 +1562,7 @@ function selectSim() {
 }
 
 function updateSim(inputsChanged, fly = false) {
-  const r = analyze({ ...sim, cup: PROFILE.cup, customMl: PROFILE.ml }, CONFIG); sim.res = r;
+  const r = analyze({ ...sim, cup: 'custom', customMl: estVolume() }, CONFIG); sim.res = r;
   if (!sim.inc || (inputsChanged && !sim.manualInc)) sim.inc = r.recommended[0];
   for (const b of $('simSide').children) b.setAttribute('aria-pressed', String(b.dataset.side === sim.side));
   for (const b of $('simViews').children) b.setAttribute('aria-pressed', String(b.dataset.view === sim.view));
@@ -1549,11 +1585,11 @@ function simState(r) {
   const side = sim.side, other = side === 'L' ? 'R' : 'L', sg = SIDES[side];
   const incLevel = INCISIONS[sim.inc]?.level || 1;
   const sh = shapeFor(r, sim.view, incLevel);
-  const gPre = geomOf({ P: 0.064 * r.sc, sc: r.sc, abs: true, shape: 'natural' });
+  const gPre = geomOf({ P: 0.064, shape: 'natural' });
   const u = gPre.uN + sg * r.X, w = gPre.wV + r.Y; const len = Math.hypot(r.X, r.Y) || 1;
   const sigma = Math.max((r.exR / 100) * 1.05, 0.012);
   const mk = (shp, sgn, withTumor) => ({
-    P: shp.P, abs: true, shape: 'natural', areola: true, defect: 0, dq: 'uoq', gland: true, fat: true, sc: shp.sc, lift: shp.lift, ptosis: shp.ptosis,
+    P: shp.P / r.sc, shape: 'natural', areola: true, defect: 0, dq: 'uoq', gland: true, fat: true, sc: shp.sc / r.sc, lift: shp.lift, ptosis: shp.ptosis,
     nsu: withTumor ? (sgn * shp.shift * r.X) / len : 0, nsw: withTumor ? (shp.shift * r.Y) / len : 0,
     defects: [{ u, w, d: withTumor ? shp.dent : 0, s: sigma }]
   });
@@ -1581,7 +1617,7 @@ function renderClock(r) {
   kids.push(mk('text', { class: 'side', x: r.Ls * 78, y: 112 }, '外側'), mk('text', { class: 'side', x: -r.Ls * 78, y: 112 }, '內側'));
   kids.push(mk('circle', { class: 'are', r: 17 }), mk('circle', { class: 'are', r: 4 }));
   const scarId = sim.view === 'post' && INCISIONS[sim.inc].level !== 1 ? r.l1[0] : sim.inc;
-  const gC = geomOf({ P: 0.064 * r.sc, sc: r.sc, abs: true, shape: 'natural' });
+  const gC = geomOf({ P: 0.064, shape: 'natural' });
   for (const p of incisionPaths(scarId, { ...r, Yf: gC.bot - gC.wN + gC.dropA + 0.004 })) {
     if (p.design && sim.view !== 'pre') continue;
     const d = p.pts.map(([x, y], i) => `${i ? 'L' : 'M'}${(x * 1000).toFixed(1)} ${(-y * 1000).toFixed(1)}`).join(' ') + (p.closed ? 'Z' : '');

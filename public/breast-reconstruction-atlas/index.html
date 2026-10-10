@@ -192,7 +192,7 @@ table.diff td { width: 50%; }
       <h1>乳房重建 3D 圖譜</h1>
       <p class="sub">用 3D 解剖模型看懂不同的乳癌手術與重建方式。拖曳旋轉、滾輪縮放,點選任何結構可看說明。</p>
     </div>
-    <span class="badge">v0.9.1 草稿・待醫師審核</span>
+    <span class="badge">v0.10 草稿・待醫師審核</span>
   </div>
 
   <nav class="tabs cats" id="cats" aria-label="分類"></nav>
@@ -222,11 +222,28 @@ table.diff td { width: 50%; }
       <details class="panel prof" id="profPanel" open>
         <summary><span class="eyebrow">病人條件</span> <b>先設定乳房外形</b> <small id="pfSum"></small></summary>
         <p class="hint">所有情境、比較與腫瘤模擬都會套用這組設定。</p>
-        <div class="grid2">
-          <label for="pfCup">乳房大小<select id="pfCup">
-            <option value="A">A 罩杯</option><option value="B">B 罩杯</option><option value="C">C 罩杯</option><option value="D">D 罩杯</option><option value="E">E 罩杯以上</option><option value="custom">自行輸入體積</option>
+        <div class="ctlgroup" role="group" aria-label="輸入方式" id="pfMode">
+          <button class="ctl" data-mode="cup" aria-pressed="true">罩杯快選</button>
+          <button class="ctl" data-mode="meas" aria-pressed="false">輸入量測值</button>
+        </div>
+        <div class="grid2" id="pfCupBox">
+          <label for="pfCup">罩杯<select id="pfCup">
+            <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option><option value="E">E</option><option value="F">F</option>
           </select></label>
-          <label for="pfMl" id="pfMlWrap" hidden>乳房體積(mL)<input id="pfMl" type="number" min="100" max="2000" step="10" inputmode="numeric"></label>
+        </div>
+        <div id="pfMeasBox" hidden>
+          <div class="grid2">
+            <label for="pfH">身高(cm)<input id="pfH" type="number" min="130" max="200" step="1" inputmode="decimal"></label>
+            <label for="pfW">體重(kg)<input id="pfW" type="number" min="30" max="160" step="0.5" inputmode="decimal"></label>
+            <label for="pfUB">下胸圍(cm)<input id="pfUB" type="number" min="60" max="130" step="0.5" inputmode="decimal"></label>
+            <label for="pfB">上胸圍(cm)<input id="pfB" type="number" min="65" max="160" step="0.5" inputmode="decimal"></label>
+            <label for="pfSNN">胸骨上切跡到乳頭(cm)<input id="pfSNN" type="number" min="14" max="40" step="0.5" inputmode="decimal"></label>
+            <label for="pfNN">兩乳頭間距(cm)<input id="pfNN" type="number" min="14" max="32" step="0.5" inputmode="decimal"></label>
+            <label for="pfIMD">兩乳房內緣間距(cm)<input id="pfIMD" type="number" min="0.5" max="8" step="0.5" inputmode="decimal"></label>
+          </div>
+          <p class="hint" id="pfCalc"></p>
+        </div>
+        <div class="grid2">
           <label for="pfAge">年齡<select id="pfAge">
             <option value="y">35 歲以下</option><option value="m">35–50 歲</option><option value="o">50–65 歲</option><option value="e">65 歲以上</option>
           </select></label>
@@ -344,7 +361,7 @@ table.diff td { width: 50%; }
     </ul>
     <div class="review">
       <span>審核醫師:__________</span>
-      <span>版本:v0.9.1 草稿</span>
+      <span>版本:v0.10 草稿</span>
       <span>審核日期:__________</span>
     </div>
     <p class="note">本頁為衛教用示意,不是個人治療建議,也不代表手術後的實際外觀。實際選擇請依主治醫師評估。</p>
