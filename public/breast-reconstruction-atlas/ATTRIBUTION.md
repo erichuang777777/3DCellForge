@@ -7,7 +7,8 @@
   (Mitsuhashi et al., BodyParts3D: 3D structure database for anatomical concepts, Nucleic Acids Res 2009, doi:10.1093/nar/gkn613)
 
 修改內容:座標轉為公尺、Y 軸朝上;鏡像物件的法線已翻正;網格減面;體表由 Z-Anatomy 體表分區合併。
-原始模型為成年男性。乳房、乳腺、皮下脂肪、腫瘤、皮瓣、擴張器與假體由 `app.js` 依解剖位置程式建模,屬教學示意。
+體表皮膚(`skin` 網格,含上臂與手)改用 MakeHuman 的成年女性身體(MPFB2 基底網格與 macro targets,**CC0 1.0**:https://github.com/makehumancommunity/mpfb2),經手臂姿勢調整、縮放與逐層對齊到 Z-Anatomy 座標,並向外推以包住內部肌肉骨骼。產生腳本在 `tools/breast-atlas/female_skin/`。
+內部骨骼、肌肉與血管仍來自成年男性模型。乳房、乳腺、皮下脂肪、腫瘤、皮瓣、擴張器與假體由 `app.js` 依解剖位置程式建模,屬教學示意。
 
 匯出腳本:`tools/breast-atlas/export_z_anatomy.py`。
 
