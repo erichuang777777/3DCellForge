@@ -106,7 +106,7 @@ void main(){
   float sp = pow(max(dot(R, V), 0.0), k == 7 ? 40.0 : 18.0);
   c += vec3(1.0, 0.97, 0.9) * sp * (k == 1 ? 0.18 : (k == 7 ? 0.55 : (k == 0 ? 0.06 : 0.1)));
   float hatch = step(0.5, fract((gl_FragCoord.x - gl_FragCoord.y) * 0.25));
-  c = mix(c, c * 0.84, hatch * (1.0 - tone) * 0.5 * uHatch);
+  c = mix(c, c * 0.84, hatch * (1.0 - tone) * (k == 0 ? 0.18 : 0.5) * uHatch);
   float e = 1.0 - abs(dot(N, V));
   c = mix(c, uInk, smoothstep(0.72, 1.0, e) * 0.5);
   c = mix(c, vec3(1.0, 0.84, 0.32), uHi * 0.4 * (0.6 + 0.4 * sin(uTime * 3.2)));
@@ -165,6 +165,8 @@ function splitComponents(geom) {
 }
 
 // ---------- 解剖分層 ----------
+const LIMB = /^(gracilis|vastlat|rectfem|sartorius|tfl|addlong|glutmax|femur|humerus|deltoid|teres|hip_|scapula|clavicle)/;
+const LIMB_V = /femoral|gluteal|circumflex|Perforating|Cephalic|Brachial|Axillary nerve/i;
 const SUPERFICIAL = ['pecmaj', 'serratus', 'lat_', 'rectus', 'extobl', 'deltoid', 'teres', 'linea_alba', 'glutmax', 'gracilis', 'vastlat', 'rectfem', 'sartorius', 'tfl', 'addlong'];
 function layerOf(name) {
   if (name.startsWith('nodes_')) return 9;
@@ -253,8 +255,9 @@ function sideFrame(s) {
 
 // ---------- 病人條件:罩杯、年齡、下垂程度、上下極比例 ----------
 const CUP_ML = { A: 250, B: 350, C: 450, D: 600, E: 750 };
-const AGE_DEF = { y: { pt: 0.5, full: 0.6 }, m: { pt: 1.2, full: 0.45 }, o: { pt: 1.9, full: 0.3 }, e: { pt: 2.5, full: 0.2 } };
-const PROFILE = { cup: 'C', ml: 450, age: 'm', pt: 1.2, ratio: 0.45, full: 0.45, ver: 0 };
+// 預設略為美化(較挺、上半部較飽滿),讓病人看到的外形有心理支持;仍可在面板調整
+const AGE_DEF = { y: { pt: 0.3, full: 0.7 }, m: { pt: 0.6, full: 0.6 }, o: { pt: 1.2, full: 0.45 }, e: { pt: 1.8, full: 0.35 } };
+const PROFILE = { cup: 'C', ml: 450, age: 'm', pt: 0.6, ratio: 0.45, full: 0.6, ver: 0 };
 const profVol = () => (PROFILE.cup === 'custom' ? PROFILE.ml : CUP_ML[PROFILE.cup]);
 const profSc = () => Math.min(Math.max(Math.cbrt(profVol() / 450), 0.75), 1.3);
 const smooth = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
@@ -277,45 +280,28 @@ function geomOf(p) {
   const top = 0.07 * sc, bot = -0.066 * sc, H = top - bot;
   const lift = p.lift || 0;
   const uN = 0.006 * sc;
-  const wN = top - (ratio + calibOff(sc, full, round, P, ratio)) * H + lift;
-  g = { P, sc, pt, full, ratio, top, bot, wN, uN, shape: p.shape, round, Rup: top - wN, Rlo: wN - bot, Rlat: 0.088 * sc - uN, Rmed: 0.058 * sc + uN,
+  // 乳頭把乳房基底的高度分成上極:下極 = ratio:(1 - ratio)(未下垂時)
+  const wN = top - ratio * H + lift;
+  g = { P, sc, pt, full, ratio, top, bot, wN, uN, shape: p.shape, round, Rup: top - wN, Rlo: wN - bot, Rlat: 0.082 * sc - uN, Rmed: 0.056 * sc + uN,
     aU: 1.4 - 0.65 * full, dropA: p.shape === 'natural' && P > 0.0005 ? (0.01 + 0.036 * pt) * sc * Math.min(P / (0.064 * sc), 1.4) * (1 - Math.min(lift / 0.02, 0.6)) : 0 };
   g.wV = g.wN - 0.85 * g.dropA; // 下垂後看到的乳頭高度(基底座標)
   // 下垂時乳頭沿乳房表面往下、往外滑,朝向外下方
-  g.nU = g.uN + (g.round ? 0 : 0.004 * pt * sc); g.nW = g.wN - (g.round ? 0 : 0.0075 * pt * sc);
+  const slide = g.round ? 0 : Math.max(pt - 0.8, 0); g.nU = g.uN + 0.004 * slide * sc; g.nW = g.wN - 0.0075 * slide * sc;
   if (GEO.size > 400) GEO.clear();
   GEO.set(key, g); return g;
 }
-// 以側面實測校正乳頭高度:在參考下垂程度(1)時,上極比例等於設定值(round 假體外形不下垂)
-const CALIB = new Map();
-function calibOff(sc, full, round, P, ratio) {
-  const key = [sc.toFixed(3), full.toFixed(2), round, (P / sc).toFixed(4), ratio.toFixed(3)].join();
-  if (CALIB.has(key)) return CALIB.get(key);
-  let lo = -0.25, hi = 0.25;
-  for (let it = 0; it < 14; it++) {
-    const off = (lo + hi) / 2; const top = 0.07 * sc, bot = -0.066 * sc, H = top - bot; const uN = 0.006 * sc; const wN = top - (ratio + off) * H;
-    const g = { P, sc, full, round, shape: round ? 'round' : 'natural', top, bot, wN, uN, Rup: top - wN, Rlo: wN - bot, Rlat: 0.088 * sc - uN, Rmed: 0.058 * sc + uN, aU: 1.4 - 0.65 * full, dropA: round ? 0 : (0.01 + 0.036) * sc };
-    const up = meridianUp(g);
-    if (up > ratio) hi = off; else lo = off; // 上極太長 → 乳頭往上
-  }
-  const v = (lo + hi) / 2; CALIB.set(key, v); return v;
-}
-function meridianUp(g) {
-  let top = -9, low = 9; const pp = { g };
-  for (let dw = g.bot; dw <= g.top; dw += 0.001) { const { D, drop } = breastField(g.uN, dw, pp); const y = dw - 0.048 * D - drop; if (D > 0.33 * g.P) top = Math.max(top, y); if (D > 0.05 * g.P) low = Math.min(low, y); }
-  const n = breastField(g.uN, g.wN, pp); const ny = g.wN - 0.048 * n.D - n.drop;
-  return (top - ny) / Math.max(top - low, 1e-4);
-}
+// 四個方向的半徑平滑過渡(避免在乳頭十字方向出現摺痕)
+const rBlend = (v, a, b, sc) => a + (b - a) * smooth(-0.025 * sc, 0.025 * sc, v);
 // 正面看:水滴形。下極飽滿圓弧、上極依飽滿度呈凹、直或凸;乳頭在最突出處
 function profile(du, dw, g) {
   const u = du - g.uN, w = dw - g.wN;
-  const x = u / (u > 0 ? g.Rlat : g.Rmed), y = w / (w > 0 ? g.Rup : g.Rlo);
+  const x = u / rBlend(u, g.Rmed, g.Rlat, g.sc), y = w / rBlend(w, g.Rlo, g.Rup, g.sc);
   const t2 = x * x + y * y; if (t2 >= 1) return 0;
   if (g.shape === 'flat' || g.P < 0.0005) return 0.0015 * (1 - t2);
   const t = Math.sqrt(t2);
   const down = y < 0 && t > 1e-6 ? Math.pow(-y / t, 1.5) : 0;
   // 寬圓的穹頂(超橢圓):中央平緩、邊緣才收;下緣較陡,形成乳房下皺褶
-  const dome = g.round ? Math.pow(1 - t2, 0.7) : Math.pow(1 - Math.pow(t, 2.4), 0.62 - 0.17 * down);
+  const dome = g.round ? Math.pow(1 - t2, 0.7) : Math.pow(1 - Math.pow(t, 2.2), 0.55 - 0.1 * down);
   if (y <= 0 || g.round) return g.P * dome;
   const cone = Math.pow(1 - t, g.aU);
   const upper = dome + (cone - dome) * smooth(0, 0.5, t);
@@ -339,10 +325,10 @@ function breastField(du, dw, p) {
   if (g.dropA > 0 && D0 > 1e-6) {
     // 下垂:乳頭與下極往下掉;往兩側與上方衰減較快,避免皮膚折疊
     const f = Math.max(D / g.P, 0); const u = du - g.uN, w = dw - g.wN;
-    const x = u / (u > 0 ? g.Rlat : g.Rmed), y = w / (w > 0 ? g.Rup : g.Rlo); const r = Math.hypot(x, y); const t = Math.min(r, 1);
+    const x = u / rBlend(u, g.Rmed, g.Rlat, g.sc), y = w / rBlend(w, g.Rlo, g.Rup, g.sc); const r = Math.hypot(x, y); const t = Math.min(r, 1);
     const downness = y < 0 && r > 1e-6 ? -y / r : 0; const lo = Math.min(Math.max(-y, 0), 1);
     // 整個乳房像袋子一樣往下垂(依組織厚度),下緣維持寬 U 形而不是收成錐狀
-    drop = g.dropA * Math.pow(Math.min(f, 1.1), 0.85) * (1 + 0.35 * lo * (0.5 + 0.5 * downness));
+    drop = g.dropA * Math.pow(Math.min(f, 1.1), 0.85) * (1 + 0.2 * lo * (0.5 + 0.5 * downness));
   }
   return { D, drop };
 }
@@ -1105,6 +1091,8 @@ function applyState(inst, s, tweening = false) {
   for (const m of inst.parts) {
     const L = m.userData.layer; if (L === undefined || L > 4) continue;
     let op = L < 4 ? Math.min(Math.max(L + 1 - peel, 0), 1) : 1;
+    // 胸部與腹部以外(四肢、臀部)只顯示皮膚;皮瓣情境高亮時才顯示該肌肉
+    if (LIMB.test(m.name) && !s.hi.some((h) => m.name.startsWith(h))) op = 0;
     if (L === 0) op *= s.ghostSkin;
     if (L === 3) op *= s.ghostMus;
     if (m.name.startsWith('fat_') || m.name.startsWith('gland_')) { const sd = s[m.name.slice(-1)]; const isFat = m.name.startsWith('fat_'); if (!isFat && s.glandShell === 0) op = 0; if (isFat && s.fatOp != null && sd.fat && sd.P > 0.008) op = s.fatOp; else if (sd.P < 0.008 || !sd[isFat ? 'fat' : 'gland'] || (s.ghostSkin < 0.9 && !(s.keepGland && !isFat)) || (peel < 0.3 && !(s.keepGland && !isFat && s.ghostSkin < 0.9))) op = 0; }
@@ -1112,7 +1100,7 @@ function applyState(inst, s, tweening = false) {
     if (m.material.uniforms) m.material.uniforms.uHi.value = s.hi.some((h) => m.name.startsWith(h)) ? 1 : 0;
   }
   const deep = peel >= 1.5 || s.ghostSkin < 0.9 || s.ghostMus < 0.9;
-  for (const [name, obj] of inst.byName) if (obj.userData.vessel) { obj.userData.mat.uniforms.uHi.value = s.vessels.includes(name) ? 1 : 0; obj.visible = deep && (!s.vesselsOnly.length || s.vesselsOnly.includes(name)); }
+  for (const [name, obj] of inst.byName) if (obj.userData.vessel) { obj.userData.mat.uniforms.uHi.value = s.vessels.includes(name) ? 1 : 0; obj.visible = deep && (!s.vesselsOnly.length || s.vesselsOnly.includes(name)) && (!LIMB_V.test(name) || s.vessels.includes(name) || s.vesselsOnly.includes(name)); }
   // 乳暈、皮島、傷口
   const mu = inst.skin.material.uniforms;
   const nR = inst.nipple?.R, nL = inst.nipple?.L;
