@@ -12,6 +12,8 @@ THREE.ColorManagement.enabled = false;
 
 // ---------- 彩繪圖譜著色器 ----------
 const TIME = { value: 0 };
+// 矢狀剖面:只保留 x 在 [x0, x0+厚度] 的切片,切開處以實心色塊顯示(z=1 開啟)
+const SEC = { value: new THREE.Vector4(-0.095, 0.04, 0, 0) };
 const INK = new THREE.Color('#2a1e18');
 
 const VERT = `
@@ -47,7 +49,13 @@ vec2 vor(vec3 x){ vec3 p = floor(x); vec3 f = fract(x); float d1 = 8.0; float d2
     if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }
   }
   return vec2(sqrt(d1), sqrt(d2)); }
+uniform vec4 uSec;
 void main(){
+  if (uSec.z > 0.5) {
+    // 切面靠近觀看者那側全部切掉;切片後方只留背面,讓封閉的構造(假體、肌肉、皮膚包住的組織)切開後是實心的
+    if (vW.x < uSec.x || (gl_FrontFacing && vW.x > uSec.x + uSec.y)) discard;
+    if (!gl_FrontFacing) { vec3 sc = mix(uColor, uShade, 0.3); sc = mix(sc, vec3(0.97, 0.95, 0.91), 0.65 * smoothstep(0.06, 0.12, vW.x - uSec.x)); gl_FragColor = vec4(sc, 1.0); return; } // 離切面越遠越淡,當作背景
+  }
   if (uCut.w > 0.0 && distance(vW, uCut.xyz) < uCut.w) discard;
   vec3 N = normalize(vN);
   if (!gl_FrontFacing) N = -N;
@@ -116,9 +124,9 @@ void main(){
   gl_FragColor = vec4(c, alpha);
 }`;
 
-const OUT_VERT = `uniform float uW; void main(){ vec3 p = position + normal * uW; gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }`;
-const OUT_FRAG = `uniform vec3 uInk; void main(){ gl_FragColor = vec4(uInk, 1.0); }`;
-const outlineMat = new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, side: THREE.BackSide, uniforms: { uW: { value: 0.0007 }, uInk: { value: INK } } });
+const OUT_VERT = `uniform float uW; varying vec3 vW; void main(){ vec3 p = position + normal * uW; vW = (modelMatrix * vec4(p, 1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }`;
+const OUT_FRAG = `uniform vec3 uInk; uniform vec4 uSec; varying vec3 vW; void main(){ if (uSec.z > 0.5 && (vW.x < uSec.x || vW.x > uSec.x + uSec.y)) discard; gl_FragColor = vec4(uInk, 1.0); }`;
+const outlineMat = new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, side: THREE.BackSide, uniforms: { uW: { value: 0.0007 }, uInk: { value: INK }, uSec: SEC } });
 
 const KIND = { skin: 0, muscle: 1, fat: 2, bone: 3, gland: 4, plain: 5, implant: 7, margin: 8, omentum: 9, flap: 10 };
 
@@ -129,7 +137,7 @@ function atlasMat(kind, color, shade, opts = {}) {
     transparent: !!opts.transparent, depthWrite: opts.depthWrite ?? true,
     uniforms: {
       uColor: { value: new THREE.Color(color) }, uShade: { value: new THREE.Color(shade) }, uInk: { value: INK },
-      uKind: { value: KIND[kind] }, uOpacity: { value: opts.opacity ?? 1 }, uHi: { value: 0 }, uTime: TIME, uHatch: { value: opts.hatch ?? 1 },
+      uKind: { value: KIND[kind] }, uOpacity: { value: opts.opacity ?? 1 }, uHi: { value: 0 }, uTime: TIME, uSec: SEC, uHatch: { value: opts.hatch ?? 1 },
       uFiber: { value: opts.fiber ? opts.fiber.clone() : new THREE.Vector3(0, 3, 0) }, uCut: { value: new THREE.Vector4(0, 0, 0, 0) },
       uAreR: { value: new THREE.Vector4() }, uAreL: { value: new THREE.Vector4() },
       uPaddle: { value: new THREE.Vector4() }, uPaddleR: { value: new THREE.Vector3(0.045, 0.032, 0.06) },
@@ -227,6 +235,7 @@ const CAMS = {
   back: { t: [0, 1.22, 0], p: [-0.2, 1.3, -0.9] },
   abdomen: { t: [0, 1.06, 0.06], p: [0.05, 1.15, 0.86] },
   perf: { t: [0, 0.99, 0.1], p: [0.0, 1.03, 0.6] },
+  sec: { t: [-0.075, 1.25, 0.07], p: [-0.5, 1.26, 0.08] },
   perfObl: { t: [-0.012, 0.99, 0.095], p: [-0.24, 1.03, 0.29] },
   full: { t: [0, 1.0, 0.02], p: [-0.35, 1.15, 1.9] },
   backLow: { t: [0, 0.9, -0.05], p: [-0.35, 1.05, -1.05] },
@@ -1128,7 +1137,7 @@ const BASE_STATE = {
   tumorAt: null, custom: [], keepGland: false, xray: false,
   aug: { plane: null, fill: 0, vis: 0, shapeR: 'round', shapeL: 'round' }, glandShell: 1, glandDetail: 0, hiGland: '', density: 1.5, fatOp: null, lymph: 0,
   gf: { tech: null, t: 0, vis: 0, arc: 0, zone: null }, wscars: [], woundAt: null, perfAt: null, paddleR: null, fatg: 0,
-  nodes: 0, dye: 0, flow: 0, slnGone: 0, clipGone: 0, gI: 0, gII: 0, gIII: 0, probe: 0, drain: 0, clip: 0, hiNode: '', vesselsOnly: [], perfMap: 0, perfCourse: 0, zones: 0
+  nodes: 0, dye: 0, flow: 0, slnGone: 0, clipGone: 0, gI: 0, gII: 0, gIII: 0, probe: 0, drain: 0, clip: 0, hiNode: '', vesselsOnly: [], perfMap: 0, perfCourse: 0, zones: 0, sec: 0
 };
 function merge(a, b) {
   if (b === undefined) return structuredClone(a);
@@ -1298,6 +1307,12 @@ function setOpacity(mesh, op) {
 
 function applyState(inst, s, tweening = false) {
   inst.state = s;
+  const secOn = s.sec > 0.5;
+  if (inst.secOn !== secOn) {
+    inst.secOn = secOn;
+    // 剖面時需要畫背面,切開處才會被填滿
+    inst.root.traverse((o) => { const m = o.material; if (!m || !m.uniforms?.uSec || m === outlineMat) return; if (m.userData.side0 === undefined) m.userData.side0 = m.side; m.side = secOn ? THREE.DoubleSide : m.userData.side0; m.needsUpdate = true; });
+  }
   const changed = updateBreasts(inst, s);
   const peel = s.peel;
   for (const m of inst.parts) {
@@ -1305,6 +1320,7 @@ function applyState(inst, s, tweening = false) {
     let op = L < 4 ? Math.min(Math.max(L + 1 - peel, 0), 1) : 1;
     // 胸部與腹部以外(四肢、臀部)只顯示皮膚;皮瓣情境高亮時才顯示該肌肉
     if (LIMB.test(m.name) && !s.hi.some((h) => m.name.startsWith(h))) op = 0;
+    if (s.sec > 0.5 && /^(liver|stomach|colon|omentum)/.test(m.name)) op = 0; // 剖面只看胸壁與乳房
     if (L === 0) op *= s.ghostSkin;
     if (L === 3) op *= s.ghostMus;
     if (m.name.startsWith('fat_') || m.name.startsWith('gland_')) { const sd = s[m.name.slice(-1)]; const isFat = m.name.startsWith('fat_'); if (!isFat && s.glandShell === 0) op = 0; if (isFat && s.fatOp != null && sd.fat && sd.P > 0.008) op = s.fatOp; else if (sd.P < 0.008 || !sd[isFat ? 'fat' : 'gland'] || (s.ghostSkin < 0.9 && !(s.keepGland && !isFat)) || (peel < 0.3 && !(s.keepGland && !isFat && s.ghostSkin < 0.9))) op = 0; }
@@ -1362,7 +1378,7 @@ function applyState(inst, s, tweening = false) {
     inst.implant.userData.info = s.imp.kind;
     const col = s.imp.kind === 'expander' ? PAL.expander : PAL.implant;
     inst.implant.material.uniforms.uColor.value.set(col[0]); inst.implant.material.uniforms.uShade.value.set(col[1]);
-    const vis = peel >= 0.5 || s.ghostSkin < 0.9 ? s.imp.vis * 0.9 : 0;
+    const vis = peel >= 0.5 || s.ghostSkin < 0.9 || s.sec > 0.5 ? s.imp.vis * 0.9 : 0;
     setOpacity(inst.implant, vis); inst.implant.material.userData.alwaysTransparent = true;
     inst.port.visible = s.imp.kind === 'expander' && vis > 0.01;
     inst.port.position.copy(inst.implant.position).addScaledVector(f, half + 0.001).add(new THREE.Vector3(0, -0.012, 0));
@@ -1384,7 +1400,7 @@ function applyState(inst, s, tweening = false) {
     m.position.copy(ps.c); m.scale.set(ps.a, ps.b, ps.half);
     m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ps.f);
     m.material.userData.alwaysTransparent = true;
-    setOpacity(m, peel >= 0.5 || s.ghostSkin < 0.9 ? a.vis * 0.9 : 0);
+    setOpacity(m, peel >= 0.5 || s.ghostSkin < 0.9 || s.sec > 0.5 ? a.vis * 0.9 : 0);
   }
   for (const key of ['R', 'L']) drapePec(inst, key, inst.poses[key]);
   updateGlandDetail(inst, s);
@@ -1406,7 +1422,7 @@ function applyState(inst, s, tweening = false) {
     inst.scars.traverse((o) => o.geometry?.dispose());
     inst.scars = buildScars(inst, s.scars, s.custom, s.wscars); inst.root.add(inst.scars);
   }
-  inst.scars.visible = peel < 0.5 && s.ghostSkin > 0.3;
+  inst.scars.visible = peel < 0.5 && s.ghostSkin > 0.3 && !(s.sec > 0.5);
   return changed;
 }
 
@@ -1958,6 +1974,7 @@ function frame(now) {
   vps.forEach((v, k) => {
     renderer.setViewport(v.x, v.y, v.w, v.h); renderer.setScissor(v.x, v.y, v.w, v.h);
     camera.aspect = v.w / v.h; camera.updateProjectionMatrix();
+    SEC.value.z = instances[k].state?.sec > 0.5 ? 1 : 0;
     renderer.render(instances[k].scene, camera);
   });
   // 標籤

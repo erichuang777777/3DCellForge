@@ -137,17 +137,18 @@ export const PRESETS = [
     }
   },
   {
-    id: 'implant_plane', zh: '假體:胸大肌下 vs 胸大肌前', section: true,
-    opts: [{ key: 'ml', zh: '假體大小', choices: [['250', '250 mL'], ['350', '350 mL'], ['450', '450 mL'], ['550', '550 mL']] }, { key: 'view', zh: '看', choices: [['layer', '肌肉與假體'], ['skin', '外觀']] }],
+    id: 'implant_plane', zh: '假體:胸大肌下 vs 胸大肌前',
+    opts: [{ key: 'ml', zh: '假體大小', choices: [['250', '250 mL'], ['350', '350 mL'], ['450', '450 mL'], ['550', '550 mL']] }, { key: 'view', zh: '看', choices: [['sec', '側面剖面'], ['layer', '肌肉與假體'], ['skin', '外觀']] }],
     build: ({ ml, view }) => {
-      const v = Number(ml); const layer = view === 'layer';
+      const v = Number(ml); const layer = view === 'layer', sec = view === 'sec';
       const R = { P: 0.012, gland: false, fat: false, shape: 'round' };
-      const ex = layer ? { ghostMus: 0.55, hi: ['pecmaj_r'] } : {};
+      // 剖面:在右乳中央切一刀,從外側看切面(左為後方胸壁,右為前方)
+      const ex = layer ? { ghostMus: 0.55, hi: ['pecmaj_r'] } : sec ? { sec: 1, hi: ['pecmaj_r'] } : {};
       return {
-        cam: 'oblique', peel: layer ? 3 : 0,
+        cam: sec ? 'sec' : 'oblique', peel: layer ? 3 : 0,
         a: { label: `胸大肌下(${v} mL)`, state: { R, ...ex, imp: { kind: 'implant', plane: 'sub', fill: 1, vis: 1, ml: v } } },
         b: { label: `胸大肌前 + ADM(${v} mL)`, state: { R, ...ex, imp: { kind: 'implant', plane: 'pre', fill: 1, vis: 1, ml: v, adm: 1, admType: 'wrap' } } },
-        text: '胸大肌下:假體在肌肉後方,上半部多一層肌肉覆蓋,邊緣較不明顯,但用力時乳房會隨肌肉移動(動作變形)、疼痛較多。胸大肌前:肌肉不動,沒有動作變形、恢復較快,但只靠皮膚與皮下脂肪覆蓋,需要皮瓣夠厚,常以 ADM 或網片包覆。假體越大,突度越高,需要的皮膚也越多。',
+        text: (sec ? '側面剖面(左為後方胸壁、右為前方;藍色為假體、紅色為胸大肌、黃色為 ADM,可旋轉從不同角度看切面)。' : '') + '胸大肌下:假體在肌肉後方,上半部多一層肌肉覆蓋,邊緣較不明顯,但用力時乳房會隨肌肉移動(動作變形)、疼痛較多。胸大肌前:肌肉不動,沒有動作變形、恢復較快,但只靠皮膚與皮下脂肪覆蓋,需要皮瓣夠厚,常以 ADM 或網片包覆。假體越大,突度越高,需要的皮膚也越多。',
         diffs: [['覆蓋較厚', '覆蓋只有皮膚與皮下脂肪'], ['動作變形、疼痛較多', '沒有動作變形'], ['適合皮瓣較薄的人', '需要皮瓣夠厚、血流好']]
       };
     }
