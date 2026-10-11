@@ -80,6 +80,10 @@ button { font: inherit; }
 .peel label b { color: var(--fg); }
 .peel input { width: 100%; accent-color: var(--accent); }
 .perfbox { margin: 8px 0 4px; overflow-x: auto; }
+.augbox { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.augbox h4 { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); font-weight: 500; }
+.augbox .rng { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.augbox input[type=range] { width: 100%; accent-color: var(--accent); }
 .perftab { width: 100%; min-width: 0; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .perftab th, .perftab td { padding: 4px 5px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
 .perftab th { color: var(--muted); font-weight: 500; }
@@ -199,7 +203,7 @@ table.diff td { width: 50%; }
       <h1>乳房重建 3D 圖譜</h1>
       <p class="sub">用 3D 解剖模型看懂不同的乳癌手術與重建方式。拖曳旋轉、滾輪縮放,點選任何結構可看說明。</p>
     </div>
-    <span class="badge">v0.18 草稿・待醫師審核</span>
+    <span class="badge">v0.19 草稿・待醫師審核</span>
   </div>
 
   <nav class="tabs cats" id="cats" aria-label="分類"></nav>
@@ -213,6 +217,9 @@ table.diff td { width: 50%; }
         <div class="ctlgroup" role="group" aria-label="模式">
           <button class="ctl" id="m-single" aria-pressed="true">步驟</button>
           <button class="ctl" id="m-compare" aria-pressed="false">並排比較</button>
+        </div>
+        <div class="ctlgroup" role="group" aria-label="畫面風格">
+          <button class="ctl" id="m-real" aria-pressed="true" title="切換擬真皮膚與圖譜線稿風格">擬真皮膚</button>
         </div>
       </div>
       <div class="cmplabels" id="cmplabels" hidden><span id="cmpA"></span><span id="cmpB"></span></div>
@@ -326,6 +333,7 @@ table.diff td { width: 50%; }
         <ol class="steps" id="steps"></ol>
         <p class="steptext" id="stepText"></p>
         <div class="perfbox" id="perfBox" hidden></div>
+        <div class="augbox" id="augBox" hidden></div>
         <div class="stepnav">
           <button id="prev">上一步</button>
           <button id="next" class="primary">下一步</button>
@@ -372,7 +380,7 @@ table.diff td { width: 50%; }
     </ul>
     <div class="review">
       <span>審核醫師:__________</span>
-      <span>版本:v0.18 草稿</span>
+      <span>版本:v0.19 草稿</span>
       <span>審核日期:__________</span>
     </div>
     <p class="note">本頁為衛教用示意,不是個人治療建議,也不代表手術後的實際外觀。實際選擇請依主治醫師評估。</p>

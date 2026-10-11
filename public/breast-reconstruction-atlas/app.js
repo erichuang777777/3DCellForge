@@ -4,6 +4,31 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SCENARIOS as BASE_SCENARIOS, END_STATES as BASE_END, COMPARE_DEFAULT, INFO, LAYER_NAMES, PERF_MAP } from './content.js';
 import { CATS, BASE_META, EXTRA_SCENARIOS, TECH_BY_ID, DONORS, ZONE_L3 } from './techniques.js';
 const SCENARIOS = [...BASE_SCENARIOS.map((s) => ({ ...s, ...(BASE_META[s.id] || {}) })), ...EXTRA_SCENARIOS];
+// ---------- 隆乳模擬:依假體大小、突度、形狀與放置層次產生術後外形 ----------
+const AUGSIM = { ml: 300, prof: 'mod', shape: 'round', plane: 'dual' };
+const PROF = { low: [0.82, '低突'], mod: [1, '中突'], high: [1.2, '高突'], ultra: [1.38, '超高突'] };
+const PLANE_ZH = { subglandular: '乳腺下', dual: '雙平面', sub: '胸大肌下' };
+// 術後外形:原本的乳房加上假體的突度,底寬至少等於假體底寬;圓形假體上半部飽滿、水滴形較自然。
+// 假體本身只在剝開時顯示(皮膚外形由這組參數決定,避免包覆造成摺痕)
+function augsimState() {
+  const pf = PROF[AUGSIM.prof][0]; const { W, proj } = implDims(AUGSIM.ml, pf);
+  const g0 = geomOf(BASE_STATE.R); const W0 = g0.sc * 0.1275;
+  const cover = AUGSIM.plane === 'sub' ? 0.85 : AUGSIM.plane === 'dual' ? 0.9 : 0.95; // 肌肉下:突度被肌肉壓住一些
+  const Pabs = g0.P * 0.6 + proj * cover + 0.01;
+  const side = AUGSIM.shape === 'round'
+    ? { Pabs, shape: 'natural', upper: Math.min(0.62 + 0.2 * (pf - 1), 0.75), ptosis: 0.2, ratio: 0.55, sc: Math.max(1.06, (W * 1.12) / W0) }
+    : { Pabs, shape: 'natural', upper: 0.36 + 0.12 * (pf - 1), ptosis: 0.4, ratio: 0.5, sc: Math.max(1.04, (W * 1.08) / W0) };
+  return { R: side, L: side, aug: { plane: AUGSIM.plane, fill: 1, vis: 1, shapeR: AUGSIM.shape, shapeL: AUGSIM.shape, ml: AUGSIM.ml, prof: pf, noWrap: true } };
+}
+SCENARIOS.push({
+  id: 'augsim', cat: 'cosmetic', tag: '美容手術', name: '隆乳模擬:選假體大小與形狀', short: '隆乳模擬',
+  one: '以目前設定的乳房外形為術前,選擇假體的體積、突度、形狀與放置層次,看術後外形的變化。數值為依假體尺寸換算的示意。',
+  steps: [
+    { title: '術前(目前的外形)', cam: 'front', text: '這是依「病人條件」設定產生的術前外形。可在上方改罩杯、下垂程度或輸入量測值。', get state() { const P = geomOf(BASE_STATE.R).P; return { R: { Pabs: P, sc: 1 }, L: { Pabs: P, sc: 1 } }; } },
+    { title: '術後模擬', cam: 'front', dur: 2600, get text() { return augsimText(); }, get state() { return augsimState(); } }
+  ],
+  pros: ['可依身形挑選體積與突度', '術前就能和醫師討論想要的外觀'], cons: ['模擬只代表比例,不保證術後實際外觀', '皮膚彈性、組織厚度與胸廓形狀都會影響結果'], fit: ['考慮隆乳或對側對稱手術的病人']
+});
 const END_STATES = [...BASE_END, ...EXTRA_SCENARIOS.filter((x) => !BASE_END.some((e) => e.id === x.id)).map((x) => ({ id: x.id, label: x.short, from: [x.id, x.steps.length - 1] }))];
 import { CONFIG, INCISIONS, ZONES, analyze, incisionPaths, postShape } from './oncoplasty.js';
 import { PRESETS, QN } from './compare.js';
@@ -14,6 +39,8 @@ THREE.ColorManagement.enabled = false;
 const TIME = { value: 0 };
 // 矢狀剖面:只保留 x 在 [x0, x0+厚度] 的切片,切開處以實心色塊顯示(z=1 開啟)
 const SEC = { value: new THREE.Vector4(-0.095, 0.04, 0, 0) };
+// 擬真皮膚(1)或圖譜線稿風格(0)
+const REAL = { value: 1 };
 const INK = new THREE.Color('#2a1e18');
 
 const VERT = `
@@ -49,7 +76,12 @@ vec2 vor(vec3 x){ vec3 p = floor(x); vec3 f = fract(x); float d1 = 8.0; float d2
     if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }
   }
   return vec2(sqrt(d1), sqrt(d2)); }
-uniform vec4 uSec;
+uniform vec4 uSec; uniform float uReal;
+// 擬真皮膚:毛孔與細紋的高度場(公尺座標)
+float skinH(vec3 p){ // 只用 value noise,手機 GPU 也跑得動
+  return 0.3 * vn(p * 650.0) + 0.12 * vn(p * 2600.0) - 0.55 * smoothstep(0.62, 0.92, vn(p * 1700.0));
+}
+vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 void main(){
   if (uSec.z > 0.5) {
     // 切面靠近觀看者那側全部切掉;切片後方只留背面,讓封閉的構造(假體、肌肉、皮膚包住的組織)切開後是實心的
@@ -88,6 +120,65 @@ void main(){
     tex = mix(0.9, 1.03, edge) * (0.96 + 0.06 * vn(vW * 300.0));
   } else if (k == 0) {
     tex = 0.97 + 0.05 * vn(vW * 400.0);
+  }
+  if (uReal > 0.5 && k == 0 && uKind < 0.5) {
+    // ---- 擬真皮膚:微細法線(毛孔、細紋)+ 次表面散射近似 + 雙層高光 ----
+    float camD = distance(cameraPosition, vW);
+    float fade = 1.0 - smoothstep(0.55, 1.5, camD);
+    vec3 Nm = N;
+    if (fade > 0.01) {
+      float e0 = 0.00012; float h0 = skinH(vW);
+      vec3 g = vec3(skinH(vW + vec3(e0, 0.0, 0.0)) - h0, skinH(vW + vec3(0.0, e0, 0.0)) - h0, skinH(vW + vec3(0.0, 0.0, e0)) - h0) / e0;
+      g -= dot(g, N) * N;
+      Nm = normalize(N - g * 0.00011 * fade * smoothstep(0.15, 0.45, abs(dot(N, V)))); // 邊緣掠射角不加細紋,避免輪廓雜訊
+    }
+    // 膚色:亞洲淺膚色為底,低頻的紅暈與黃調變化
+    vec3 base = vec3(0.88, 0.66, 0.55);
+    float blot = vn(vW * 22.0), blot2 = vn(vW * 70.0 + 3.1);
+    base = mix(base, vec3(0.92, 0.68, 0.62), 0.35 * smoothstep(0.45, 0.85, blot));
+    base = mix(base, vec3(0.95, 0.8, 0.64), 0.25 * smoothstep(0.5, 0.9, blot2));
+    float pore = 1.0 - smoothstep(0.0, 0.2, vor(vW * 1500.0).x);
+    base *= 1.0 - 0.07 * pore * fade;
+    // 乳暈與乳頭:中心較深、外緣漸淡,Montgomery 小顆粒,乳頭皺褶
+    float dR = uAreR.w > 0.0 ? distance(vW, uAreR.xyz) : 1.0; float dL = uAreL.w > 0.0 ? distance(vW, uAreL.xyz) : 1.0;
+    float rA = dR < dL ? uAreR.w : uAreL.w; float dA = min(dR, dL); vec3 cN = dR < dL ? uAreR.xyz : uAreL.xyz;
+    float are = rA > 0.0 ? 1.0 - smoothstep(rA * 0.7, rA * 1.05, dA + 0.0012 * (vn(vW * 300.0) - 0.5)) : 0.0;
+    float nip = rA > 0.0 ? 1.0 - smoothstep(0.0032, 0.0046, dA) : 0.0;
+    vec3 areC = mix(vec3(0.68, 0.45, 0.39), vec3(0.55, 0.34, 0.3), smoothstep(rA, 0.0, dA));
+    float mont = are * (1.0 - smoothstep(0.0, 0.25, vor(vW * 520.0).x)) * step(rA * 0.45, dA);
+    base = mix(base, areC * (0.95 + 0.1 * vn(vW * 900.0)), are * 0.9);
+    base = mix(base, vec3(0.5, 0.3, 0.27) * (0.94 + 0.08 * sin(atan(vW.y - cN.y, vW.x - cN.x) * 14.0 + vn(vW * 1500.0) * 5.0)) * (0.9 + 0.15 * vn(vW * 2500.0)), nip * 0.85);
+    base *= 1.0 + 0.1 * mont;
+    if (uPaddle.w > 0.0) {
+      float ep = length((vW - uPaddle.xyz) / uPaddleR);
+      base = mix(base, base * vec3(1.04, 1.0, 0.93), (1.0 - smoothstep(0.95, 1.0, ep)) * uPaddle.w);
+      base = mix(base, vec3(0.6, 0.28, 0.25), (1.0 - smoothstep(0.0, 0.035, abs(ep - 1.0))) * uPaddle.w * 0.8);
+    }
+    if (uWound.w > 0.0) {
+      float ew = length((vW - uWound.xyz) / uWoundR);
+      base = mix(base, mix(vec3(0.62, 0.2, 0.15), vec3(0.8, 0.5, 0.3), 0.35 * vn(vW * 80.0)), (1.0 - smoothstep(0.92, 1.0, ew)) * uWound.w);
+    }
+    vec3 alb = pow(base, vec3(2.2));
+    // 光源:暖色主光、冷色補光、背後輪廓光;漫射用依波長不同的包覆量模擬皮下散射(陰影交界偏紅)
+    vec3 Lk = L, Lf = L2, Lr = normalize((vec4(0.1, 0.3, -0.95, 0.0) * viewMatrix).xyz);
+    float nl = dot(Nm, Lk);
+    vec3 wrapW = vec3(0.55, 0.32, 0.25);
+    vec3 dif = clamp((vec3(nl) + wrapW) / (1.0 + wrapW), 0.0, 1.0); dif *= dif;
+    vec3 col2 = alb * dif * vec3(1.0, 0.94, 0.86) * 1.9;
+    col2 += alb * clamp((dot(Nm, Lf) + 0.3) / 1.3, 0.0, 1.0) * vec3(0.75, 0.82, 0.95) * 0.32;
+    float hemi = 0.5 + 0.5 * Nm.y;
+    col2 += alb * mix(vec3(0.3, 0.22, 0.19), vec3(0.42, 0.45, 0.5), hemi) * 0.34;
+    float NV = clamp(dot(Nm, V), 0.0, 1.0);
+    col2 += vec3(1.0, 0.45, 0.32) * alb * pow(1.0 - NV, 3.0) * clamp(dot(N, Lr) + 0.5, 0.0, 1.0) * 0.5;
+    // 雙層高光(皮脂光澤 + 寬高光),Schlick Fresnel
+    vec3 Hk = normalize(Lk + V); float nh = clamp(dot(Nm, Hk), 0.0, 1.0);
+    float F = 0.028 + 0.972 * pow(1.0 - clamp(dot(Hk, V), 0.0, 1.0), 5.0);
+    float spec = (pow(nh, 38.0) * 0.55 + pow(nh, 9.0) * 0.18) * F * 9.0 * clamp(nl * 2.0, 0.0, 1.0);
+    col2 += vec3(1.0, 0.97, 0.92) * spec * (1.0 - 0.6 * are);
+    vec3 outC = pow(aces(col2 * 0.95), vec3(1.0 / 2.2));
+    outC = mix(outC, vec3(1.0, 0.84, 0.32), uHi * 0.4 * (0.6 + 0.4 * sin(uTime * 3.2)));
+    gl_FragColor = vec4(outC, uOpacity);
+    return;
   }
   vec3 c = mix(sh, col, tone) * tex;
   c += col * 0.10 * max(dot(N, L2), 0.0);
@@ -137,7 +228,7 @@ function atlasMat(kind, color, shade, opts = {}) {
     transparent: !!opts.transparent, depthWrite: opts.depthWrite ?? true,
     uniforms: {
       uColor: { value: new THREE.Color(color) }, uShade: { value: new THREE.Color(shade) }, uInk: { value: INK },
-      uKind: { value: KIND[kind] }, uOpacity: { value: opts.opacity ?? 1 }, uHi: { value: 0 }, uTime: TIME, uSec: SEC, uHatch: { value: opts.hatch ?? 1 },
+      uKind: { value: KIND[kind] }, uOpacity: { value: opts.opacity ?? 1 }, uHi: { value: 0 }, uTime: TIME, uSec: SEC, uReal: REAL, uHatch: { value: opts.hatch ?? 1 },
       uFiber: { value: opts.fiber ? opts.fiber.clone() : new THREE.Vector3(0, 3, 0) }, uCut: { value: new THREE.Vector4(0, 0, 0, 0) },
       uAreR: { value: new THREE.Vector4() }, uAreL: { value: new THREE.Vector4() },
       uPaddle: { value: new THREE.Vector4() }, uPaddleR: { value: new THREE.Vector3(0.045, 0.032, 0.06) },
@@ -318,7 +409,7 @@ function geomOf(p) {
   const dropS = 0.6 * dropA, slideD = 0.4 * dropA;
   let wN = yV - C_Y + lift + (PROFILE.mode === 'meas' ? 0.85 * dropS : -slideD);
   wN = Math.min(wN, NOTCH_Y - 0.055 - C_Y - Rup); // 乳房上緣不超過約第二肋
-  g = { P, sc: W / 0.1275, pt, full, ratio, top: wN + Rup, bot: wN - Rlo, wN, uN, shape: p.shape, round, Rup, Rlo, Rlat, Rmed, aU: 1.4 - 0.65 * full, dropA: dropS };
+  g = { P, sc: W / 0.1275, pt, full, ratio, top: wN + Rup, bot: wN - Rlo, wN, uN, shape: p.shape, round, Rup, Rlo, Rlat, Rmed, aU: Math.max(1.4 - 0.65 * full, 1.05), dropA: dropS };
   g.wV = g.wN - 0.85 * g.dropA; // 下垂後看到的乳頭高度(基底座標)
   // 下垂時乳頭沿乳房表面往下、往外滑,朝向外下方
   const slide = g.round ? 0 : Math.max(pt - 0.8, 0); g.nU = g.uN + 0.004 * slide * g.sc; g.nW = g.wN - 0.0075 * slide * g.sc;
@@ -588,6 +679,9 @@ function createInstance() {
     const gg = subsetGeometry(inst.skin.geometry, inst.regions[key], 0.86);
     addPart('fat_' + key, new THREE.Mesh(fg, atlasMat('fat', ...PAL.fat, { side: THREE.DoubleSide })), 1, { info: 'fat', outline: false });
     addPart('gland_' + key, new THREE.Mesh(gg, atlasMat('gland', ...PAL.gland, { side: THREE.DoubleSide })), 2, { info: 'gland', outline: false });
+    // 模擬變形時疊上的網格線(與脂肪殼共用幾何,會跟著乳房外形更新)
+    const wm = new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ color: '#2fc9bb', wireframe: true, transparent: true, opacity: 0, depthTest: false }));
+    wm.renderOrder = 13; wm.visible = false; inst.root.add(wm); (inst.wire ||= []).push(wm);
   }
   // 血管
   for (const [name, splines] of Object.entries(BASE.curves)) {
@@ -1176,7 +1270,8 @@ function prepareFrom(from, to) {
 // ---------- 套用狀態 ----------
 // ---------- 假體尺寸與位置 ----------
 // 體積(mL)→ 底寬、突度(公尺);為圓形中突度假體的近似值,待醫師依常用型號修改
-function implDims(ml) { return { W: 0.1 + (0.012 * (ml - 200)) / 100, proj: 0.032 + (0.006 * (ml - 200)) / 100 }; }
+// prof:突度倍率(中突度 1);體積不變時,突度越高、底寬越窄(底寬 ∝ 1/√突度)
+function implDims(ml, prof = 1) { return { W: (0.1 + (0.012 * (ml - 200)) / 100) / Math.sqrt(prof), proj: (0.032 + (0.006 * (ml - 200)) / 100) * prof }; }
 const defImplMl = () => Math.round((estVolume() * 0.8) / 25) * 25;
 const PLANE_OFF = { pre: 0.002, subglandular: 0.002, dual: -0.006, sub: -0.011 };
 const PLANE_COVER = { pre: 0.007, subglandular: 0.009, dual: 0.009, sub: 0.013 };
@@ -1186,7 +1281,7 @@ function implantPose(inst, side, s) {
   if (!recon && !aug) return null;
   const a = recon ? s.imp : s.aug;
   const plane = recon ? (a.plane || 'sub') : a.plane;
-  const ml = a.ml ?? (recon ? defImplMl() : 300); const { W, proj } = implDims(ml);
+  const ml = a.ml ?? (recon ? defImplMl() : 300); const { W, proj } = implDims(ml, a.prof || 1);
   const half = 0.003 + (proj / 2 - 0.003) * Math.max(a.fill, 0);
   const f = inst.regions[side].frame.f;
   const c = inst.pec[side].clone().addScaledVector(f, half + PLANE_OFF[plane]).add(new THREE.Vector3(0, -0.006, 0));
@@ -1235,11 +1330,11 @@ function updateBreasts(inst, s) {
     // 全切後重建(乳腺與脂肪已移除):只剩薄皮瓣,皮膚貼著假體,上半部沒有組織、假體上緣看得出落差
     const thin = pose && key === 'R' && s.imp.kind && p.gland === false && p.fat === false;
     const fit = p.fit || thin;
-    if (pose) { const g0 = geomOf(p); if (fit || g0.P < pose.need) p = { ...p, Pabs: fit ? Math.max(pose.need, 0.004) : Math.max(g0.P, pose.need) }; }
+    if (pose && !s.aug.noWrap) { const g0 = geomOf(p); if (fit || g0.P < pose.need) p = { ...p, Pabs: fit ? Math.max(pose.need, 0.004) : Math.max(g0.P, pose.need) }; }
     const g = geomOf(p); p = { ...p, g }; inst.geo[key] = g;
     // 假體處:皮膚至少在假體表面外 cover 的距離(逐點包覆,避免假體或胸大肌穿出皮膚)
     let wrap = null;
-    if (pose) {
+    if (pose && !(s.aug.noWrap && !thin)) {
       const e1 = new THREE.Vector3(1, 0, 0).addScaledVector(pose.f, -pose.f.x).normalize(); const e2 = new THREE.Vector3().crossVectors(pose.f, e1);
       const cover = PLANE_COVER[pose.plane]; const v = new THREE.Vector3();
       wrap = (i) => {
@@ -1325,6 +1420,7 @@ function applyState(inst, s, tweening = false) {
     if (L === 3) op *= s.ghostMus;
     if (m.name.startsWith('fat_') || m.name.startsWith('gland_')) { const sd = s[m.name.slice(-1)]; const isFat = m.name.startsWith('fat_'); if (!isFat && s.glandShell === 0) op = 0; if (isFat && s.fatOp != null && sd.fat && sd.P > 0.008) op = s.fatOp; else if (sd.P < 0.008 || !sd[isFat ? 'fat' : 'gland'] || (s.ghostSkin < 0.9 && !(s.keepGland && !isFat)) || (peel < 0.3 && !(s.keepGland && !isFat && s.ghostSkin < 0.9))) op = 0; }
     setOpacity(m, op);
+    if (L === 0 && m.userData.outline) m.userData.outline.visible = op > 0.97 && REAL.value < 0.5; // 擬真模式皮膚不描邊
     if (m.material.uniforms) m.material.uniforms.uHi.value = s.hi.some((h) => m.name.startsWith(h)) ? 1 : 0;
   }
   if (inst.abdFat) setOpacity(inst.abdFat, inst.abdFat.material.uniforms.uOpacity.value * (s.ghostSkin > 0.9 ? 1 : 0) * (1 - s.wound) * (peel > 0.02 ? 1 : 0));
@@ -1502,6 +1598,7 @@ function buildUI() {
   ui.peel.addEventListener('input', () => setPeel(Number(ui.peel.value)));
   // 放開時靠近整數層就吸附
   ui.peel.addEventListener('change', () => { const v = Number(ui.peel.value), r = Math.round(v); if (Math.abs(v - r) < 0.1) { ui.peel.value = String(r); setPeel(r); } });
+  $('m-real').addEventListener('click', (e) => { REAL.value = REAL.value > 0.5 ? 0 : 1; e.currentTarget.setAttribute('aria-pressed', String(REAL.value > 0.5)); for (const i of instances) if (i.state) applyState(i, i.state); });
   ui.mSingle.addEventListener('click', () => setMode('single'));
   ui.mCompare.addEventListener('click', () => setMode('compare'));
 }
@@ -1557,9 +1654,32 @@ function goStep(i, instant = false) {
   app.peelOverride = null;
   const to = stepState(app.scn, i);
   ui.peel.value = String(to.peel); ui.peelName.textContent = peelLabel(to.peel);
-  app.perfSel = null; renderPerfBox(to.perfMap > 0.5);
+  app.perfSel = null; renderPerfBox(to.perfMap > 0.5); renderAugBox();
+  if (app.scn === 'augsim' && i === 1 && !instant) app.wireT = performance.now();
   transition(instances[0], to, instant ? 0 : (scn.steps[i].dur || 1300));
   flyTo(to.cam, instant);
+}
+
+// 隆乳模擬:說明文字與控制面板
+function augsimText() {
+  const pf = PROF[AUGSIM.prof]; const { W, proj } = implDims(AUGSIM.ml, pf[0]);
+  const ks = Object.keys(CUP_D); const d = measures().d; const up = AUGSIM.ml / 175;
+  const now = cupOf(d), after = cupOf(d + up * 2.5);
+  return `${AUGSIM.ml} mL ${pf[1]}${AUGSIM.shape === 'round' ? '圓形' : '水滴形'}假體,放在${PLANE_ZH[AUGSIM.plane]}。假體底寬約 ${(W * 100).toFixed(1)} cm、突度約 ${(proj * 100).toFixed(1)} cm;依每 150–200 mL 約一個罩杯估算,約由 ${now} 罩杯變成 ${after} 罩杯(${ks.includes(after) ? '示意' : '超出常見尺寸'})。底寬太寬會讓乳房外側超出胸廓、內側乳溝過近;突度越高,上半部越飽滿。`;
+}
+function renderAugBox() {
+  const box = $('augBox'); const show = app.scn === 'augsim' && app.mode === 'single'; box.hidden = !show; if (!show) return;
+  const chips = (key, list) => { const g = el('div', { class: 'chips', role: 'group' }); for (const [v, zh] of list) { const b = el('button', { class: 'chip', 'aria-pressed': String(AUGSIM[key] === v) }, zh); b.addEventListener('click', () => { AUGSIM[key] = v; augsimUpdate(); }); g.append(b); } return g; };
+  const lab = el('label', { class: 'rng' }); const sp = el('span', {}, '假體體積 '); const bv = el('b', {}, AUGSIM.ml + ' mL'); sp.append(bv);
+  const rg = el('input', { type: 'range', min: '150', max: '800', step: '25', value: String(AUGSIM.ml) });
+  rg.addEventListener('input', () => { AUGSIM.ml = Number(rg.value); bv.textContent = AUGSIM.ml + ' mL'; augsimUpdate(false); });
+  lab.append(sp, rg);
+  const btn = el('button', { class: 'primary' }, app.step === 1 ? '回到術前' : '看術後模擬'); btn.addEventListener('click', () => goStep(app.step === 1 ? 0 : 1));
+  box.replaceChildren(lab, el('h4', {}, '突度'), chips('prof', Object.entries(PROF).map(([k, v]) => [k, v[1]])), el('h4', {}, '形狀'), chips('shape', [['round', '圓形'], ['tear', '水滴形']]), el('h4', {}, '放置層次'), chips('plane', Object.entries(PLANE_ZH)), btn);
+}
+function augsimUpdate(rerender = true) {
+  if (rerender) renderAugBox();
+  if (app.step === 1) { ui.stepText.textContent = augsimText(); transition(instances[0], stepState('augsim', 1), 700); }
 }
 
 // 穿通枝報告表(CTA 報告格式示意),點選列可單獨標示
@@ -1988,6 +2108,11 @@ function frame(now) {
       ui.callout.hidden = !ok; if (ok) { ui.callout.style.left = sx + 'px'; ui.callout.style.top = sy + 'px'; ui.callout.textContent = app.pick.label; }
     } else ui.callout.hidden = true;
   } else ui.callout.hidden = true;
+  if (app.wireT) {
+    const t = (performance.now() - app.wireT) / 2800; const o = t >= 1 ? 0 : Math.sin(Math.PI * Math.min(t, 1)) * 0.35;
+    for (const w of instances[0].wire || []) { w.material.opacity = o; w.visible = o > 0.01; }
+    if (t >= 1) app.wireT = 0;
+  }
   requestAnimationFrame(frame);
 }
 
