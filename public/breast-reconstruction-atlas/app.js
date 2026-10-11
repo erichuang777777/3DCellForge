@@ -659,13 +659,13 @@ function addPartTo(inst, name, mesh, layer, info) {
 
 // ---------- DIEP 穿通枝地圖(以肚臍為原點的 CTA 報告示意) ----------
 const UMB = new THREE.Vector3(0, 1.0175, 0.115);
-function labelSprite(text, col) {
-  const c = document.createElement('canvas'); c.width = 128; c.height = 64; const x = c.getContext('2d');
+function labelSprite(text, col, w = 128, opts = {}) {
+  const c = document.createElement('canvas'); c.width = w; c.height = 64; const x = c.getContext('2d');
   x.fillStyle = 'rgba(255,255,255,0.92)'; x.strokeStyle = col; x.lineWidth = 5;
-  x.beginPath(); x.roundRect(4, 4, 120, 56, 14); x.fill(); x.stroke();
-  x.fillStyle = '#1d1d1f'; x.font = 'bold 38px system-ui, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, 64, 34);
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true }));
-  sp.scale.set(0.014, 0.007, 1); sp.renderOrder = 12; return sp;
+  x.beginPath(); x.roundRect(4, 4, w - 8, 56, 14); x.fill(); x.stroke();
+  x.fillStyle = '#1d1d1f'; x.font = 'bold 34px system-ui, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, w / 2, 34);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: opts.depthTest ?? true }));
+  sp.scale.set(0.014 * w / 128, 0.007, 1); sp.renderOrder = 12; return sp;
 }
 function curveAtY(pts, y) {
   for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i]; if ((a[1] - y) * (b[1] - y) <= 0 && a[1] !== b[1]) { const t = (y - a[1]) / (b[1] - a[1]); return new THREE.Vector3(a[0] + (b[0] - a[0]) * t, y, a[2] + (b[2] - a[2]) * t); } }
@@ -735,6 +735,42 @@ function updatePerfMap(inst, s) {
 }
 
 // ---------- 前哨淋巴結與廓清 ----------
+// 腋下淋巴結分區:以胸小肌外緣、內緣為界(Level I 外側、II 後方、III 內上方),加上分區標籤
+function buildAxZones(inst) {
+  const g = new THREE.Group(); g.visible = false; inst.root.add(g);
+  const pm = inst.byName.get('pecmin_r'); const lab = [];
+  if (pm) {
+    const pp = pm.geometry.attributes.position; const bins = new Map();
+    for (let i = 0; i < pp.count; i++) {
+      const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i); const b = Math.round(y * 200);
+      const e = bins.get(b) || { lat: null, med: null };
+      if (!e.lat || x < e.lat.x) e.lat = new THREE.Vector3(x, y, z);
+      if (!e.med || x > e.med.x) e.med = new THREE.Vector3(x, y, z);
+      bins.set(b, e);
+    }
+    const keys = [...bins.keys()].sort((a, b) => a - b);
+    const mat = new THREE.MeshBasicMaterial({ color: '#1f6a6f', transparent: true, depthTest: false });
+    for (const side of ['lat', 'med']) {
+      const pts = keys.map((k) => bins.get(k)[side].clone().add(new THREE.Vector3(0, 0, 0.004))).filter((_, i) => i % 2 === 0);
+      if (pts.length < 2) continue;
+      const curve = new THREE.CatmullRomCurve3(pts); const L = curve.getLength(); const n = Math.floor(L / 0.006);
+      for (let i = 0; i <= n; i++) { const m = new THREE.Mesh(new THREE.SphereGeometry(0.0014, 8, 6), mat); m.position.copy(curve.getPointAt(i / n)); m.renderOrder = 11; g.add(m); }
+    }
+    inst.axZoneMat = mat;
+  }
+  const cen = (lv) => { const ns = inst.nodes.filter((m) => m.userData.level === lv && m.userData.c.x < 0); return ns.length ? ns.reduce((a, m) => a.add(m.userData.c), new THREE.Vector3()).multiplyScalar(1 / ns.length) : null; };
+  for (const [lv, text, off] of [['I', 'Level I', [-0.03, -0.005, 0.02]], ['II', 'Level II', [0.0, 0.0, 0.035]], ['III', 'Level III', [0.015, 0.02, 0.03]], ['IMN', '內乳', [0.02, 0, 0.03]]]) {
+    const c = cen(lv); if (!c) continue;
+    const sp = labelSprite(text, NODE_COL[lv][0], 200, { depthTest: false }); sp.position.copy(c).add(new THREE.Vector3(...off)); sp.scale.multiplyScalar(1.35); g.add(sp); lab.push(sp);
+  }
+  inst.axZones = { g, lab };
+}
+function updateAxZones(inst, s) {
+  const z = inst.axZones; if (!z) return;
+  const v = s.zones || 0; z.g.visible = v > 0.01; if (!z.g.visible) return;
+  for (const sp of z.lab) sp.material.opacity = v;
+  if (inst.axZoneMat) inst.axZoneMat.opacity = 0.85 * v;
+}
 function buildAxilla(inst) {
   // 原始資料在胸小肌內上方(鎖骨下)沒有淋巴結,補 3 顆示意的 Level III
   [[-0.088, 1.378, 0.026], [-0.096, 1.386, 0.018], [-0.08, 1.383, 0.034]].forEach((p, k) => {
@@ -760,10 +796,26 @@ function buildAxilla(inst) {
     // 依深度遮擋:Level II 在胸小肌後方,要透過半透明肌肉才看得到,轉到背面時也不會穿透身體
     m.renderOrder = 8; m.material.userData.alwaysTransparent = true;
   }
+  // 只畫代表性的淋巴結(教科書示意):每一區挑幾顆分散的,其餘隱藏
+  const KEEP = { I: 7, II: 4, III: 3, IMN: 3 };
+  const keep = new Set();
+  for (const lv of Object.keys(KEEP)) for (const sgn of [-1, 1]) {
+    const pool = inst.nodes.filter((m) => m.userData.level === lv && Math.sign(m.userData.c.x) === sgn); if (!pool.length) continue;
+    const cen = pool.reduce((a, m) => a.add(m.userData.c), new THREE.Vector3()).multiplyScalar(1 / pool.length);
+    const pick = [pool.reduce((b, m) => (m.userData.c.distanceTo(cen) < b.userData.c.distanceTo(cen) ? m : b))];
+    while (pick.length < Math.min(KEEP[lv], pool.length)) pick.push(pool.filter((m) => !pick.includes(m)).reduce((b, m) => { const d = Math.min(...pick.map((q) => q.userData.c.distanceTo(m.userData.c))); return d > b.d ? { m, d } : b; }, { m: null, d: -1 }).m);
+    pick.forEach((m) => keep.add(m));
+  }
+  for (const m of inst.nodes) if (!keep.has(m)) { m.visible = false; m.userData.hidden = true; inst.root.remove(m); }
+  inst.parts = inst.parts.filter((m) => !m.userData.hidden);
+  inst.nodes = inst.nodes.filter((m) => keep.has(m));
+  // 前哨淋巴結:最靠近乳房外側(腋窩前下方)的 3 顆 Level I
   const target = new THREE.Vector3(-0.115, 1.29, 0.06);
-  const ant = inst.nodes.filter((m) => m.userData.level === 'I');
-  inst.sentinel = ant.reduce((b, m) => (!b || m.userData.c.distanceTo(target) < b.userData.c.distanceTo(target) ? m : b), null);
-  if (inst.sentinel) { inst.sentinel.material = inst.sentinel.material.clone(); inst.sentinel.userData.info = 'sentinel'; }
+  const ant = inst.nodes.filter((m) => m.userData.level === 'I' && m.userData.c.x < 0);
+  inst.sentinels = ant.slice().sort((a, b) => a.userData.c.distanceTo(target) - b.userData.c.distanceTo(target)).slice(0, 3);
+  for (const m of inst.sentinels) { m.material = m.material.clone(); m.userData.info = 'sentinel'; }
+  inst.sentinel = inst.sentinels[0];
+  buildAxZones(inst);
   const sc = inst.sentinel ? inst.sentinel.userData.c.clone() : new THREE.Vector3(-0.12, 1.31, 0.03);
   inst.slnC = sc; buildDye(inst);
   // γ 探頭
@@ -775,7 +827,7 @@ function buildAxilla(inst) {
   inst.drain = new THREE.Mesh(new THREE.TubeGeometry(dcurve, 40, 0.0025, 8), atlasMat('implant', '#e7eef2', '#8aa0ad', { transparent: true }));
   inst.drain.name = 'drain'; inst.drain.userData.info = 'drain'; inst.root.add(inst.drain);
   // 標記夾:放在另一顆 Level I 淋巴結
-  const other = ant.filter((m) => m !== inst.sentinel).sort((a, b) => a.userData.c.distanceTo(target) - b.userData.c.distanceTo(target))[0] || inst.sentinel;
+  const other = ant.filter((m) => !inst.sentinels.includes(m)).sort((a, b) => a.userData.c.distanceTo(target) - b.userData.c.distanceTo(target))[0] || inst.sentinel;
   inst.clip = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.0015, 0.0015), atlasMat('bone', '#e9edf0', '#7d8790'));
   inst.clip.position.copy(other ? other.userData.c : sc); inst.clip.name = 'clip'; inst.clip.userData.info = 'clip'; inst.clip.renderOrder = 10; inst.root.add(inst.clip);
   inst.clipNode = other;
@@ -804,9 +856,9 @@ function updateAxilla(inst, s) {
   // 取出動畫:淋巴結往切口方向移出並淡出
   const exitS = new THREE.Vector3(-0.2, 1.305, 0.07), exitL = new THREE.Vector3(-0.21, 1.29, 0.05);
   for (const m of inst.nodes) {
-    const lv = m.userData.level; const isS = m === inst.sentinel;
+    const lv = m.userData.level; const isS = inst.sentinels.includes(m);
     let op = s.nodes; let out = 0; let exit = exitL;
-    if (lv === 'I' || lv === 'II') { const gv = lv === 'I' ? s.gI : s.gII; out = Math.max(out, gv); }
+    if (lv === 'I' || lv === 'II' || lv === 'III') { const gv = lv === 'I' ? s.gI : lv === 'II' ? s.gII : s.gIII; out = Math.max(out, gv); }
     if (isS && s.slnGone > out) { out = s.slnGone; exit = exitS; }
     if (m === inst.clipNode && s.clipGone > out) { out = s.clipGone; exit = exitS; }
     const mv = smooth(0, 0.75, out); op *= 1 - smooth(0.55, 1, out);
@@ -816,7 +868,7 @@ function updateAxilla(inst, s) {
     const hi = s.hiNode === 'I_II' ? (lv === 'I' || lv === 'II') : s.hiNode === 'sentinel' ? isS : s.hiNode === 'clip' ? m === inst.clipNode : false;
     m.material.uniforms.uHi.value = hi ? 1 : 0;
   }
-  if (inst.sentinel) { const c = new THREE.Color(NODE_COL.I[0]).lerp(new THREE.Color('#2f63d6'), Math.min(s.dye, 1)); inst.sentinel.material.uniforms.uColor.value.copy(c); inst.sentinel.material.uniforms.uShade.value.copy(new THREE.Color(NODE_COL.I[1]).lerp(new THREE.Color('#13285e'), Math.min(s.dye, 1))); }
+  for (const sn of inst.sentinels) { const c = new THREE.Color(NODE_COL.I[0]).lerp(new THREE.Color('#2f63d6'), Math.min(s.dye, 1)); sn.material.uniforms.uColor.value.copy(c); sn.material.uniforms.uShade.value.copy(new THREE.Color(NODE_COL.I[1]).lerp(new THREE.Color('#13285e'), Math.min(s.dye, 1))); }
   inst.dyePath.visible = s.dye > 0.01 && s.slnGone < 0.5;
   if (inst.dyePath.visible) {
     for (const m of inst.dyePath.children) if (!m.isInstancedMesh) m.geometry.setDrawRange(0, Math.floor((inst.dyeTotal * Math.min(s.dye, 1)) / 3) * 3);
@@ -833,6 +885,7 @@ function updateAxilla(inst, s) {
   inst.drain.material.userData.alwaysTransparent = true; setOpacity(inst.drain, s.drain * 0.9);
   if (inst.clipNode) inst.clip.position.copy(inst.clipNode.userData.c).lerp(exitS, smooth(0, 0.75, s.clipGone));
   inst.clip.visible = s.clip > 0.01 && s.clipGone < 0.95; inst.clip.scale.setScalar(1 + 0.2 * Math.sin(TIME.value * 4));
+  updateAxZones(inst, s);
 }
 
 // ---------- 術式庫通用皮瓣 ----------
@@ -1075,7 +1128,7 @@ const BASE_STATE = {
   tumorAt: null, custom: [], keepGland: false, xray: false,
   aug: { plane: null, fill: 0, vis: 0, shapeR: 'round', shapeL: 'round' }, glandShell: 1, glandDetail: 0, hiGland: '', density: 1.5, fatOp: null, lymph: 0,
   gf: { tech: null, t: 0, vis: 0, arc: 0, zone: null }, wscars: [], woundAt: null, perfAt: null, paddleR: null, fatg: 0,
-  nodes: 0, dye: 0, flow: 0, slnGone: 0, clipGone: 0, gI: 0, gII: 0, probe: 0, drain: 0, clip: 0, hiNode: '', vesselsOnly: [], perfMap: 0, perfCourse: 0
+  nodes: 0, dye: 0, flow: 0, slnGone: 0, clipGone: 0, gI: 0, gII: 0, gIII: 0, probe: 0, drain: 0, clip: 0, hiNode: '', vesselsOnly: [], perfMap: 0, perfCourse: 0, zones: 0
 };
 function merge(a, b) {
   if (b === undefined) return structuredClone(a);
