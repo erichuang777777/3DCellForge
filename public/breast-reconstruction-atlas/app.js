@@ -260,8 +260,9 @@ function sideFrame(s) {
 const CUP_D = { A: 10, B: 12.5, C: 15, D: 17.5, E: 20, F: 22.5 };
 const cupOf = (d) => { const ks = Object.keys(CUP_D); let best = ks[0]; for (const k of ks) if (Math.abs(CUP_D[k] - d) < Math.abs(CUP_D[best] - d)) best = k; return d < 8.75 ? 'AA' : d > 23.75 ? 'G+' : best; };
 // 預設略為美化(較挺、上半部較飽滿),讓病人看到的外形有心理支持;仍可在面板調整
-const AGE_DEF = { y: { pt: 0.3, full: 0.7 }, m: { pt: 0.6, full: 0.6 }, o: { pt: 1.2, full: 0.45 }, e: { pt: 1.8, full: 0.35 } };
-const PROFILE = { mode: 'cup', cup: 'C', age: 'm', pt: 0.6, ratio: 0.45, full: 0.6, ver: 0,
+// 預設為「挺」的理想外形(衛教的心理支持);年齡選項才帶入下垂
+const AGE_DEF = { ideal: { pt: 0, full: 0.85 }, y: { pt: 0.3, full: 0.7 }, m: { pt: 0.6, full: 0.6 }, o: { pt: 1.2, full: 0.45 }, e: { pt: 1.8, full: 0.35 } };
+const PROFILE = { mode: 'cup', cup: 'C', age: 'ideal', pt: 0, ratio: 0.45, full: 0.85, ver: 0,
   height: 160, weight: 55, underbust: 75, bust: 90, snn: 19, nn: 19, imd: 3, snu: 40 };
 // 美學比例(Hwang 2015,西洋繪畫分析;Penn 1955 等邊三角形):胸骨上切跡到乳頭 ≈ 兩乳頭間距 ≈ 0.46 × 胸骨上切跡到肚臍
 const idealSNN = (snu) => 0.46 * snu;
@@ -300,7 +301,7 @@ function geomOf(p) {
   const Rmed = clampN(xN - M.imd / 200, 0.04, W * 0.75); const Rlat = Math.max(W - Rmed, 0.045);
   const H = W * 0.95; const Rup = ratio * H, Rlo = (1 - ratio) * H;
   const soft = PROFILE.mode === 'meas' ? clampN(1 + 0.04 * (bmi() - 25), 0.9, 1.4) : 1;
-  const dropA = p.shape === 'natural' && P > 0.0005 ? soft * (0.01 + 0.036 * pt) * Math.sqrt(W / 0.1275) * Math.min(P / 0.054, 1.4) * (1 - Math.min(lift / 0.02, 0.6)) : 0;
+  const dropA = p.shape === 'natural' && P > 0.0005 ? soft * (0.045 * pt) * Math.sqrt(W / 0.1275) * Math.min(P / 0.054, 1.4) * (1 - Math.min(lift / 0.02, 0.6)) : 0;
   // 量測模式:量到的乳頭高度已含下垂,基底往上補回;罩杯快選:量測值代表未下垂,下垂時乳頭往下
   let wN = yV - C_Y + lift + (PROFILE.mode === 'meas' ? 0.85 * dropA : 0);
   wN = Math.min(wN, NOTCH_Y - 0.055 - C_Y - Rup); // 乳房上緣不超過約第二肋
@@ -331,7 +332,9 @@ function profile(du, dw, g) {
   const down = y < 0 && t > 1e-6 ? Math.pow(-y / t, 1.5) : 0;
   // 寬圓的穹頂(超橢圓):中央平緩、邊緣才收;下緣較陡,形成乳房下皺褶
   // 圓形(假體):寬而飽滿的穹頂、上極外凸;邊緣以圓角收進胸壁,避免一圈摺痕
-  const dome = g.round ? Math.pow(1 - Math.pow(t, 2.4), 0.58) * (0.55 + 0.45 * smooth(1.0, 0.8, t)) : Math.pow(1 - Math.pow(t, 3.0), 0.5 - 0.08 * down);
+  // 自然乳房:越挺(下垂越少)下極越緊實渾圓,下垂時下極才變得飽滿下沉
+  const sag = Math.min(g.pt, 1);
+  const dome = g.round ? Math.pow(1 - Math.pow(t, 2.4), 0.58) * (0.55 + 0.45 * smooth(1.0, 0.8, t)) : Math.pow(1 - Math.pow(t, 2.2 + 0.8 * sag), 0.62 - 0.12 * sag - 0.08 * down);
   if (y <= 0 || g.round) return g.P * dome;
   const cone = Math.pow(1 - t, g.aU);
   const upper = dome + (cone - dome) * smooth(0.25, 0.85, t);
