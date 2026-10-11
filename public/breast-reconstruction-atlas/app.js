@@ -356,10 +356,10 @@ function breastField(du, dw, p) {
   const D0 = D;
   if (p.defect > 0) {
     const q = Q_N[p.dq || 'uoq'];
-    D -= p.defect * Math.exp(-((du - g.uN - q[0] * g.sc) ** 2 + (dw - g.wV - q[1] * g.sc) ** 2) / (2 * 0.024 ** 2));
+    D -= 1.6 * p.defect * Math.exp(-((du - g.uN - q[0] * g.sc) ** 2 + (dw - g.wV - q[1] * g.sc) ** 2) / (2 * 0.022 ** 2)); // 加深,讓切除後的凹陷看得出來
   }
-  for (const q of p.defects || []) if (q.d > 0) D -= q.d * Math.exp(-((du - q.u) ** 2 + (dw - q.w) ** 2) / (2 * q.s ** 2));
-  if (D < D0) D = D0 > 0 ? Math.max(D, D0 * 0.12) : D0; // 凹陷不會深過原有組織厚度
+  for (const q of p.defects || []) if (q.d > 0) D -= 1.7 * q.d * Math.exp(-((du - q.u) ** 2 + (dw - q.w) ** 2) / (2 * q.s ** 2));
+  if (D < D0) D = D0 > 0 ? Math.max(D, D0 * 0.08) : D0; // 凹陷不會深過原有組織厚度
   let drop = 0;
   if (g.dropA > 0 && D0 > 1e-6) {
     // 下垂:乳頭與下極往下掉;往兩側與上方衰減較快,避免皮膚折疊
@@ -520,7 +520,15 @@ function buildScars(inst, keys, custom = [], wscars = []) {
 }
 function addScarCurve(g, inst, pts3, closed, dashed, mat, dmat, proj) {
   {
-    const hits = pts3.map(([x, y, z]) => (proj ? proj(x, y, z) : projectOnSkin(inst, x, y, z))).filter(Boolean);
+    // 先把折線加密(每段 ≤ 3 mm)再投影,長直線段才會貼著弧形的乳房表面,不會穿進皮膚裡
+    const dense = [];
+    for (let i = 0; i < pts3.length; i++) {
+      const a = pts3[i], b = pts3[(i + 1) % pts3.length]; dense.push(a);
+      if (i === pts3.length - 1 && !closed) break;
+      const n = Math.floor(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.003);
+      for (let k = 1; k < n; k++) dense.push([0, 1, 2].map((j) => a[j] + ((b[j] - a[j]) * k) / n));
+    }
+    const hits = dense.map(([x, y, z]) => (proj ? proj(x, y, z) : projectOnSkin(inst, x, y, z))).filter(Boolean);
     if (hits.length < 2) return;
     const curve = new THREE.CatmullRomCurve3(hits.map((h) => h.p.clone().addScaledVector(h.n, 0.0018)), closed);
     if (dashed) {
@@ -656,7 +664,7 @@ function labelSprite(text, col) {
   x.fillStyle = 'rgba(255,255,255,0.92)'; x.strokeStyle = col; x.lineWidth = 5;
   x.beginPath(); x.roundRect(4, 4, 120, 56, 14); x.fill(); x.stroke();
   x.fillStyle = '#1d1d1f'; x.font = 'bold 38px system-ui, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, 64, 34);
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true }));
   sp.scale.set(0.014, 0.007, 1); sp.renderOrder = 12; return sp;
 }
 function curveAtY(pts, y) {
@@ -684,7 +692,7 @@ function buildPerfMap(inst) {
     const col = d.dom ? '#f2b705' : '#d9412f';
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.0042, 0.0009, 8, 32), atlasMat('plain', col, d.dom ? '#8a6500' : '#7a1510', { hatch: 0 }));
     ring.position.copy(sk.p).addScaledVector(sk.n, 0.001); ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), sk.n);
-    ring.material.depthTest = false; ring.renderOrder = 11; ring.userData.info = 'perf'; g.add(ring);
+    ring.renderOrder = 11; ring.userData.info = 'perf'; g.add(ring);
     const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0016, 10, 8), ring.material); dot.position.copy(ring.position); dot.renderOrder = 11; g.add(dot);
     const lab = labelSprite(d.id, col); lab.position.copy(sk.p).addScaledVector(sk.n, 0.004).add(new THREE.Vector3(sx * 0.009, 0.006, 0)); g.add(lab);
     // 肌肉前後緣:沿 -Z 射線打腹直肌
@@ -749,7 +757,8 @@ function buildAxilla(inst) {
     if (lv !== 'IMN' && !m.name.includes('_proc')) { const [lat, med] = border(m.userData.c.y); const x = m.userData.c.x; const y = m.userData.c.y; lv = (y > 1.372 && x > lat - 0.025) || (x > med + 0.004 && y > 1.355) ? 'III' : x < lat - 0.004 ? 'I' : 'II'; }
     m.userData.level = lv; const col = NODE_COL[lv]; m.material.uniforms.uColor.value.set(col[0]); m.material.uniforms.uShade.value.set(col[1]);
     const k = 1.8; m.scale.setScalar(k); m.position.copy(m.userData.c).multiplyScalar(1 - k); // 以淋巴結中心放大,方便辨識
-    m.material.depthTest = false; m.renderOrder = 8; m.material.userData.alwaysTransparent = true;
+    // 依深度遮擋:Level II 在胸小肌後方,要透過半透明肌肉才看得到,轉到背面時也不會穿透身體
+    m.renderOrder = 8; m.material.userData.alwaysTransparent = true;
   }
   const target = new THREE.Vector3(-0.115, 1.29, 0.06);
   const ant = inst.nodes.filter((m) => m.userData.level === 'I');
@@ -768,7 +777,7 @@ function buildAxilla(inst) {
   // 標記夾:放在另一顆 Level I 淋巴結
   const other = ant.filter((m) => m !== inst.sentinel).sort((a, b) => a.userData.c.distanceTo(target) - b.userData.c.distanceTo(target))[0] || inst.sentinel;
   inst.clip = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.0015, 0.0015), atlasMat('bone', '#e9edf0', '#7d8790'));
-  inst.clip.position.copy(other ? other.userData.c : sc); inst.clip.name = 'clip'; inst.clip.userData.info = 'clip'; inst.clip.material.depthTest = false; inst.clip.renderOrder = 10; inst.root.add(inst.clip);
+  inst.clip.position.copy(other ? other.userData.c : sc); inst.clip.name = 'clip'; inst.clip.userData.info = 'clip'; inst.clip.renderOrder = 10; inst.root.add(inst.clip);
   inst.clipNode = other;
 }
 // 追蹤劑:乳暈周圍注射 → 皮下淋巴管 → 前哨淋巴結;以流動的小點表示
@@ -777,7 +786,7 @@ function buildDye(inst) {
   const f = inst.regions.R.frame.f; const g = geomOf(BASE_STATE.R); const sc = inst.slnC;
   const at = (du, dw, out) => { const { D, drop } = breastField(du, dw, BASE_STATE.R); return regionBasePoint(inst, 'R', du, dw).addScaledVector(f, D * out).add(new THREE.Vector3(0, -drop * out, 0)); };
   const group = new THREE.Group(); group.name = 'dyepath';
-  const mat = atlasMat('plain', '#3466d8', '#1a2f70', { hatch: 0, transparent: true }); mat.depthTest = false;
+  const mat = atlasMat('plain', '#3466d8', '#1a2f70', { hatch: 0, transparent: true });
   inst.dyeCurves = [];
   for (const [a0, k] of [[1.0, 0], [1.5, 1], [0.55, 2]]) {
     const r0 = 0.02; const p0 = at(g.uN + r0 * Math.sin(a0), g.wN + r0 * Math.cos(a0), 0.92);
@@ -788,7 +797,7 @@ function buildDye(inst) {
   }
   inst.dyeMat = mat; inst.dyeTotal = group.children[0].geometry.index.count;
   const dots = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8), atlasMat('plain', '#2f63d6', '#13285e', { hatch: 0 }), 36);
-  dots.material.depthTest = false; dots.renderOrder = 10; dots.name = 'dyepath'; dots.userData.info = 'dyepath'; group.add(dots); inst.dyeDots = dots;
+  dots.renderOrder = 10; dots.name = 'dyepath'; dots.userData.info = 'dyepath'; group.add(dots); inst.dyeDots = dots;
   group.renderOrder = 9; inst.root.add(group); inst.dyePath = group;
 }
 function updateAxilla(inst, s) {
@@ -988,7 +997,7 @@ function buildGlandDetail(inst) {
     const a = P(u, w, 0.6); const mid = a.clone().lerp(sentinel, 0.5).add(new THREE.Vector3(0, 0.01, 0.015));
     add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([a, mid, sentinel]), 20, 0.001, 5), 'lymph', lymphG);
   }
-  for (const k of ['node', 'sentinel', 'lymph']) mats[k].depthTest = false;
+  // 淋巴結依深度遮擋(從背面看不會穿過身體)
   lymphG.traverse((o) => { if (o.isMesh) o.renderOrder = 9; });
   inst.root.add(group);
   inst.gd = { group, mats, lm, lob, lymphG, key: '' };
@@ -1161,7 +1170,10 @@ function updateBreasts(inst, s) {
     const reg = inst.regions[key]; const f = reg.frame.f;
     let p = s[key]; const pose = poses[key];
     // 有假體時,皮膚至少要蓋住假體(fit:完全由假體決定外形)
-    if (pose) { const g0 = geomOf(p); if (p.fit || g0.P < pose.need) p = { ...p, Pabs: p.fit ? Math.max(pose.need, 0.004) : Math.max(g0.P, pose.need) }; }
+    // 全切後重建(乳腺與脂肪已移除):只剩薄皮瓣,皮膚貼著假體,上半部沒有組織、假體上緣看得出落差
+    const thin = pose && key === 'R' && s.imp.kind && p.gland === false && p.fat === false;
+    const fit = p.fit || thin;
+    if (pose) { const g0 = geomOf(p); if (fit || g0.P < pose.need) p = { ...p, Pabs: fit ? Math.max(pose.need, 0.004) : Math.max(g0.P, pose.need) }; }
     const g = geomOf(p); p = { ...p, g }; inst.geo[key] = g;
     // 假體處:皮膚至少在假體表面外 cover 的距離(逐點包覆,避免假體或胸大肌穿出皮膚)
     let wrap = null;
@@ -1172,14 +1184,16 @@ function updateBreasts(inst, s) {
         v.set(base[i * 3], base[i * 3 + 1], base[i * 3 + 2]).sub(pose.c);
         const r = Math.hypot(v.dot(e1) / pose.a, v.dot(e2) / pose.b); if (r > 1.8) return 0;
         const z = pose.half * Math.pow(Math.max(0, 1 - Math.min(r, 1) ** 2), 0.7);
-        return Math.max(0, z + cover - v.dot(pose.f)) * (1 - smooth(0.75, 1.8, r));
+        const up = v.dot(e2) > 0;
+        return Math.max(0, z + cover - v.dot(pose.f)) * (1 - (thin ? (up ? smooth(0.92, 1.18, r) : smooth(0.85, 1.45, r)) : smooth(0.75, 1.8, r)));
       };
     }
     const [nu, nw] = [g.nU + (p.nsu || 0), g.nW + (p.nsw || 0)];
     let maxD = -1, maxI = -1; let top = -1e9, low = 1e9;
     for (let j = 0; j < reg.idx.length; j++) {
       const i = reg.idx[j]; let { D, drop } = breastField(reg.du[j], reg.dw[j], p); const wk = reg.wt[j]; D *= wk; drop *= wk;
-      if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D - 0.012) D = smax(D, need, 0.012) + (need > D ? nipBump(reg.du[j], reg.dw[j], p, g) : 0); }
+      if (thin) { D = wrap(i) * wk + nipBump(reg.du[j], reg.dw[j], p, g) * smooth(0.002, 0.01, wrap(i)); drop = 0; }
+      else if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D - 0.012) D = smax(D, need, 0.012) + (need > D ? nipBump(reg.du[j], reg.dw[j], p, g) : 0); }
       arr[i * 3] += f.x * D; arr[i * 3 + 1] += f.y * D - drop; arr[i * 3 + 2] += f.z * D;
       const dn = (reg.du[j] - nu) ** 2 + (reg.dw[j] - nw) ** 2;
       if (D > 0.01 && dn < 0.0004 && D - dn * 20 > maxD) { maxD = D - dn * 20; maxI = i; }

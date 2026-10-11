@@ -300,7 +300,7 @@ const AX_ANAT = {
   one: '乳房的淋巴大部分流向腋下。以胸小肌為界把腋下淋巴結分成三區,手術範圍就是依這個分區描述。',
   steps: [
     { title: '腋下淋巴結分區', cam: 'axilla', peel: 3, text: '以胸小肌(高亮)為界:外側為 Level I(綠),後方為 Level II(橙),內上方鎖骨下為 Level III(紅);胸骨旁為內乳淋巴結(紫)。', state: { vesselsOnly: AXV, ghostMus: 0.3, nodes: 1, hi: ['pecmin'] } },
-    { title: '淋巴從乳房流向腋下', cam: 'oblique', text: '乳房的淋巴液經皮下與乳腺內的淋巴管(藍色流動點)流向腋下,先到達的第一站稱為前哨淋巴結。少部分(多為內側)會流向胸骨旁的內乳淋巴結。', state: { vesselsOnly: AXV, ghostSkin: 0.5, nodes: 1, dye: 1, flow: 1 }, dur: 2400 },
+    { title: '淋巴從乳房流向腋下', cam: 'oblique', text: '乳房的淋巴液經皮下與乳腺內的淋巴管(藍色流動點)流向腋下,先到達的第一站稱為前哨淋巴結。少部分(多為內側)會流向胸骨旁的內乳淋巴結。', state: { ghostMus: 0.35, vesselsOnly: AXV, ghostSkin: 0.5, nodes: 1, dye: 1, flow: 1 }, dur: 2400 },
     { title: '內乳淋巴結', cam: 'front', peel: 3, text: '胸骨兩旁、沿內乳血管分布的淋巴結(紫)。一般手術不會切除,影像上有轉移時可能以放射治療處理。', state: { vesselsOnly: ['Internal thoracic artery.r'], ghostMus: 0.3, nodes: 1 } }
   ],
   pros: ['了解分區,較容易看懂病理報告上的淋巴結描述'], cons: ['分區為示意,實際淋巴結數目與位置因人而異'], fit: ['所有需要腋下手術的病人']
@@ -309,9 +309,9 @@ const SLNB = {
   id: 'slnb', cat: 'axilla', tag: '腋下淋巴', name: '前哨淋巴結切片', short: '前哨切片',
   one: '注射追蹤劑找出最先接收乳房淋巴的 1 到 3 顆淋巴結,取出化驗,判斷腋下有沒有轉移。',
   steps: [
-    { title: '注射追蹤劑', cam: 'oblique', text: '在乳暈周圍(虛線)注射放射性同位素、藍染劑或螢光劑(ICG)。', state: { vesselsOnly: AXV, ghostSkin: 0.5, nodes: 1, dye: 0.08, flow: 1, custom: [injRing] } },
-    { title: '追蹤劑沿淋巴管流動', cam: 'oblique', text: '追蹤劑沿淋巴管(藍色流動點)流向腋下,停在第一站,也就是前哨淋巴結(變成藍色)。通常需要數分鐘到數小時。', state: { vesselsOnly: AXV, ghostSkin: 0.5, nodes: 1, dye: 1, flow: 1, hiNode: 'sentinel', custom: [injRing] }, dur: 4200 },
-    { title: '腋下小切口與 γ 探頭', cam: 'axilla', text: '在腋下皮膚皺褶處切一個 2 到 3 公分的小切口(虛線),用 γ 探頭偵測放射性,並找出被染色或發螢光的淋巴結。', state: { vesselsOnly: AXV, ghostSkin: 0.4, nodes: 1, dye: 1, flow: 1, probe: 1, hiNode: 'sentinel', wscars: [AX_SMALL(true)] } },
+    { title: '注射追蹤劑', cam: 'oblique', text: '在乳暈周圍(虛線)注射放射性同位素、藍染劑或螢光劑(ICG)。', state: { ghostMus: 0.35, vesselsOnly: AXV, ghostSkin: 0.5, nodes: 1, dye: 0.08, flow: 1, custom: [injRing] } },
+    { title: '追蹤劑沿淋巴管流動', cam: 'oblique', text: '追蹤劑沿淋巴管(藍色流動點)流向腋下,停在第一站,也就是前哨淋巴結(變成藍色)。通常需要數分鐘到數小時。', state: { ghostMus: 0.35, vesselsOnly: AXV, ghostSkin: 0.5, nodes: 1, dye: 1, flow: 1, hiNode: 'sentinel', custom: [injRing] }, dur: 4200 },
+    { title: '腋下小切口與 γ 探頭', cam: 'axilla', text: '在腋下皮膚皺褶處切一個 2 到 3 公分的小切口(虛線),用 γ 探頭偵測放射性,並找出被染色或發螢光的淋巴結。', state: { ghostMus: 0.35, vesselsOnly: AXV, ghostSkin: 0.4, nodes: 1, dye: 1, flow: 1, probe: 1, hiNode: 'sentinel', wscars: [AX_SMALL(true)] } },
     { title: '取出前哨淋巴結', cam: 'axilla', peel: 3, text: '把前哨淋巴結(藍色)從切口取出送病理檢查,通常 1 到 3 顆;其他淋巴結保留在原位。', state: { vesselsOnly: AXV, ghostMus: 0.3, nodes: 1, dye: 1, slnGone: 1, wscars: [AX_SMALL(false)] }, dur: 2600 },
     { title: '術後', cam: 'axilla', text: '只留下腋下小疤痕。手臂淋巴水腫的風險遠低於廓清,但仍可能有腋下或上臂內側麻木。部分低風險病人可依最新研究與醫師討論是否省略切片。', state: { nodes: 0, slnGone: 1, wscars: [AX_SMALL(false)] } }
   ],

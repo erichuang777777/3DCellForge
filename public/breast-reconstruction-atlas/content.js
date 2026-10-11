@@ -29,8 +29,8 @@ export const SCENARIOS = [
     steps: [
       { title: '正常的乳房構造', cam: 'oblique', text: '乳房由皮膚、皮下脂肪與乳腺組成,下方是胸大肌與肋骨。可以拖曳下方滑桿,一層一層剝開看。', state: {} },
       { title: '腫瘤在乳腺裡的位置', cam: 'oblique', peel: 2, text: '這裡以右乳外上方的腫瘤為例。腫瘤位在乳腺組織中,周圍要留一圈正常組織作為安全邊界。', state: { tumor: 1, margin: 1 } },
-      { title: '保留乳房手術:切除腫瘤與邊界', cam: 'oblique', peel: 2, text: '只切除腫瘤與周圍的安全邊界,其餘乳腺保留。術後通常需要接受放射治療。', state: { cut: 1, R: { defect: 0.012 } } },
-      { title: '保留乳房手術後的外觀', cam: 'oblique', text: '乳房外形大致保留,切口較短。切除比例大時可能凹陷或變形,這時可搭配局部重建。', state: { cut: 1, R: { defect: 0.012 }, scars: ['bcs_uoq'] } },
+      { title: '保留乳房手術:切除腫瘤與邊界', cam: 'oblique', peel: 2, text: '只切除腫瘤與周圍的安全邊界,其餘乳腺保留。術後通常需要接受放射治療。', state: { cut: 1, R: { defect: 0.02 } } },
+      { title: '保留乳房手術後的外觀', cam: 'oblique', text: '乳房外形大致保留,切口較短。切除比例大時可能凹陷或變形,這時可搭配局部重建。', state: { cut: 1, R: { defect: 0.02 }, scars: ['bcs_uoq'] } },
       { title: '乳房全切後的外觀', cam: 'oblique', text: '全切會移除整個乳房組織與乳頭乳暈,胸前留下橫向疤痕。之後可以選擇重建,也可以不重建。', state: { ...MAST } },
       { title: '全切後剩下的結構', cam: 'oblique', peel: 3, text: '全切後,胸大肌與肋骨仍在。假體重建時,假體常放在胸大肌下方或前方。', state: { ...MAST } }
     ],

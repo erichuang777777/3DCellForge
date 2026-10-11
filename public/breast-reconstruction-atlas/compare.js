@@ -1,5 +1,6 @@
 // 常見比較:每個主題有選項,產生左右兩邊的狀態。所有臨床文字為草稿,待醫師審核。
 import { donorScar, AX } from './techniques.js';
+import { incisionPaths } from './oncoplasty.js';
 
 // 象限位置:相對乳頭(du 向外側為正、dw 向上為正,公尺)
 export const QN = { uoq: [0.034, 0.04], loq: [0.036, -0.028], liq: [-0.03, -0.028], uiq: [-0.03, 0.038], lat: [0.064, 0.01], low: [0, -0.036] };
@@ -26,6 +27,13 @@ const camFor = (q) => (q === 'uiq' || q === 'liq' ? 'front' : 'oblique');
 const bcsState = (q, d, scar) => ({ tq: q, cut: 1, R: { defect: d, dq: q }, custom: [scar] });
 const FLAP_BY_Q = { uoq: ['tdap', 'TDAP 胸背動脈穿通枝皮瓣'], loq: ['licap', 'LICAP 側胸肋間穿通枝皮瓣'], liq: ['aicap', 'AICAP 前肋間穿通枝皮瓣'], uiq: ['micap', 'MICAP 內側肋間穿通枝皮瓣'] };
 
+const INC_TXT = {
+  periareolar: { label: '乳暈旁切口', text: '乳暈旁切口的疤痕落在乳暈與皮膚交界,較不明顯,但腫瘤離乳暈越遠越困難。', d: ['疤痕藏在乳暈邊緣', '腫瘤太遠時不適合', '需經皮下隧道到達腫瘤'] },
+  batwing: { label: '蝙蝠翼切口', text: '蝙蝠翼切口在乳暈上方往兩側延伸,可同時切掉一塊皮膚並把乳頭往上提,適合乳暈上方的腫瘤或略下垂的乳房。', d: ['疤痕在乳暈上緣與兩側', '乳頭會略往上提', '適合乳暈上方、靠近乳暈的腫瘤'] },
+  imf: { label: '乳房下皺褶切口', text: '乳房下皺褶切口的疤痕藏在乳房下緣,適合靠近下緣的腫瘤。', d: ['疤痕藏在下緣,正面看不到', '只適合靠近下緣的腫瘤', '上方腫瘤距離太遠'] },
+  lateral_linear: { label: '側胸切口', text: '側胸切口位在乳房外側靠近腋下,可順便做腋下手術,適合外側的腫瘤。', d: ['疤痕在側面,正面看不到', '可同時處理腋下淋巴', '只適合外側腫瘤'] }
+};
+
 export const PRESETS = [
   {
     id: 'bcs_mast', zh: '保留乳房 vs 全切', opts: [QUAD],
@@ -38,14 +46,20 @@ export const PRESETS = [
     })
   },
   {
-    id: 'bcs_inc', zh: '保留乳房:刀口位置', opts: [QUAD],
-    build: ({ q }) => ({
-      cam: camFor(q),
-      a: { label: '腫瘤正上方切口', state: bcsState(q, 0.012, overTumor(q)) },
-      b: { label: '乳暈旁切口', state: bcsState(q, 0.012, periAreolar(q)) },
-      text: '同樣的切除範圍,刀口可以開在腫瘤正上方(上半部弧形、下半部放射狀),或沿乳暈邊緣從遠處切除。乳暈旁的疤痕落在膚色交界,較不明顯,但腫瘤離乳暈越遠,手術越困難。',
-      diffs: [['直接到達腫瘤,切除最直接', '疤痕藏在乳暈邊緣'], ['疤痕在乳房表面', '腫瘤太遠時不適合'], ['適合任何位置', '需經皮下隧道到達腫瘤']]
-    })
+    id: 'bcs_inc', zh: '保留乳房:刀口位置', opts: [QUAD, { key: 'inc', zh: 'B 的刀口', choices: [['periareolar', '乳暈旁'], ['batwing', '蝙蝠翼'], ['imf', '乳房下皺褶'], ['lateral_linear', '側胸']] }],
+    build: ({ q, inc }) => {
+      // 右乳:facing 座標的外側為負
+      const paths = incisionPaths(inc, { X: -QN[q][0], Y: QN[q][1], exR: 2.0, Ls: -1, sc: 1, Yf: -0.052 }).filter((p) => !p.design);
+      const B = { ...bcsState(q, 0.012, null), custom: paths.map((p) => cut(p.pts.map(([x, y]) => [r4(x), r4(y)]), 'R', { closed: !!p.closed })) };
+      const T = INC_TXT[inc];
+      return {
+        cam: camFor(q),
+        a: { label: '腫瘤正上方切口', state: bcsState(q, 0.012, overTumor(q)) },
+        b: { label: T.label, state: B },
+        text: '同樣的切除範圍,刀口可以開在腫瘤正上方(上半部弧形、下半部放射狀),或改從較隱藏的位置進去切除。' + T.text,
+        diffs: [['直接到達腫瘤,切除最直接', T.d[0]], ['疤痕在腫瘤上方的乳房表面', T.d[1]], ['適合任何位置', T.d[2]]]
+      };
+    }
   },
   {
     id: 'bcs_recon', zh: '保留乳房:有無局部重建', opts: [QUAD],

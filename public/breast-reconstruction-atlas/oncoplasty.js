@@ -30,8 +30,8 @@ export const ZONES = {
 
 export const INCISIONS = {
   // Level I:單純切除與局部組織移位
-  curvilinear: { level: 1, zh: '弧形切口', en: 'Curvilinear', text: '沿乳頭同心圓方向的弧線,常用於乳房上半部,疤痕順著皮膚紋路。' },
-  radial: { level: 1, zh: '放射狀切口', en: 'Radial', text: '從乳頭向外的直線,常用於乳房下半部,可避免下緣被拉扯變形。' },
+  curvilinear: { level: 1, zh: '腫瘤正上方弧形切口', en: 'Curvilinear (over tumor)', text: '直接在腫瘤正上方、沿乳頭同心圓方向的弧線,常用於乳房上半部,疤痕順著皮膚紋路。' },
+  radial: { level: 1, zh: '腫瘤正上方放射狀切口', en: 'Radial (over tumor)', text: '在腫瘤正上方、從乳頭向外的直線,常用於乳房下半部,可避免下緣被拉扯變形。' },
   lateral_linear: { level: 1, zh: '側胸直線切口', en: 'Lateral linear', text: '位於側胸,與腋中線平行的直線,疤痕藏在手臂旁。' },
   periareolar: { level: 1, zh: '乳暈旁切口', en: 'Periareolar', text: '沿乳暈邊緣的弧線,疤痕落在乳暈與皮膚交界,較不明顯。' },
   batwing: { level: 1, zh: '蝙蝠翼切口', en: 'Batwing', text: '乳暈上方兩側延伸如翅膀,用於乳暈上方的腫瘤,可同時切除皮膚並上提乳頭。' },
@@ -131,7 +131,7 @@ export function incisionPaths(id, ctx) {
       return [{ pts: arc(nac, a - span / 2, a + span / 2) }];
     }
     case 'batwing': {
-      const W = nac + 0.028; const peak = Math.max(ty + e, nac + 0.02);
+      const W = nac + 0.028; const peak = Math.min(Math.max(ty + e, nac + 0.02), nac + 0.03);
       return [
         { pts: [[-W, 0.004], ...arc(nac, -Math.PI * 0.42, Math.PI * 0.42, 16), [W, 0.004]] },
         { pts: [[-W, 0.004], [-nac * 0.9, peak * 0.82], [0, peak], [nac * 0.9, peak * 0.82], [W, 0.004]] }
