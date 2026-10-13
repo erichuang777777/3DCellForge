@@ -17,7 +17,7 @@ function augsimState() {
   const Pabs = g0.P * 0.6 + proj * cover + 0.01;
   const side = AUGSIM.shape === 'round'
     ? { Pabs, shape: 'natural', upper: Math.min(0.62 + 0.2 * (pf - 1), 0.75), ptosis: 0.2, ratio: 0.4, sc: Math.max(1.06, (W * 1.12) / W0) }
-    : { Pabs, shape: 'natural', upper: 0.36 + 0.12 * (pf - 1), ptosis: 0.4, ratio: 0.38, sc: Math.max(1.04, (W * 1.08) / W0) };
+    : { Pabs, shape: 'natural', upper: 0.36 + 0.12 * (pf - 1), ptosis: 0.0, ratio: 0.38, sc: Math.max(1.04, (W * 1.08) / W0) };
   return { R: side, L: side, aug: { plane: AUGSIM.plane, fill: 1, vis: 1, shapeR: AUGSIM.shape, shapeL: AUGSIM.shape, ml: AUGSIM.ml, prof: pf, noWrap: true } };
 }
 SCENARIOS.push({
@@ -500,9 +500,9 @@ function bulgeOf(du, dw, D, g) {
   const ux = u / r, wy = w / r;
   // 四周都往外鼓(下方最多、外側次之、內側再次、上方最少),最大鼓出落在基底與乳頭之間偏外圈處,
   // 鼓出量大於該處到基底邊緣的距離,所以中段會超出基底(側面與仰視都看得到「下緣內收」)
-  const dirW = 0.25 + 0.85 * Math.max(0, -wy) + 0.15 * Math.max(0, ux) + 0.1 * Math.max(0, -ux) - 0.15 * Math.max(0, wy);
-  const ring = smooth(0.12, 0.6, t) * (1 - smooth(0.78, 1.0, t)); // 鼓出在中段最大,接近基底時平順收回,下緣形成柔和的皺褶而非硬摺
-  const b = 0.9 * D * ring * dirW * Math.min(g.P / 0.04, 1.15) * (1 - 0.3 * smooth(0.06, 0.085, g.P));
+  const dirW = 0.3 + 0.3 * Math.max(0, -wy) + 0.25 * Math.max(0, ux) + 0.15 * Math.max(0, -ux) - 0.15 * Math.max(0, wy);
+  const ring = smooth(0.1, 0.5, t) * (1 - smooth(0.6, 1.0, t)); // 鼓出在中段最大,接近基底時平順收回,下緣形成柔和的皺褶而非硬摺
+  const b = Math.min(0.75 * D * ring * dirW * Math.min(g.P / 0.04, 1.15) * (1 - 0.3 * smooth(0.06, 0.085, g.P)), 0.009); // 上限約 9 mm:只是下緣微微內收,不讓下極往下凸出變形
   return [ux * b, wy * b];
 }
 // 平滑取大值(假體包覆與乳房外形交界不出現摺痕)
