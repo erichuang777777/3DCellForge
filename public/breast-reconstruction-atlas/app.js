@@ -16,8 +16,8 @@ function augsimState() {
   const cover = AUGSIM.plane === 'sub' ? 0.85 : AUGSIM.plane === 'dual' ? 0.9 : 0.95; // 肌肉下:突度被肌肉壓住一些
   const Pabs = g0.P * 0.6 + proj * cover + 0.01;
   const side = AUGSIM.shape === 'round'
-    ? { Pabs, shape: 'natural', upper: Math.min(0.62 + 0.2 * (pf - 1), 0.75), ptosis: 0.2, ratio: 0.55, sc: Math.max(1.06, (W * 1.12) / W0) }
-    : { Pabs, shape: 'natural', upper: 0.36 + 0.12 * (pf - 1), ptosis: 0.4, ratio: 0.5, sc: Math.max(1.04, (W * 1.08) / W0) };
+    ? { Pabs, shape: 'natural', upper: Math.min(0.62 + 0.2 * (pf - 1), 0.75), ptosis: 0.2, ratio: 0.4, sc: Math.max(1.06, (W * 1.12) / W0) }
+    : { Pabs, shape: 'natural', upper: 0.36 + 0.12 * (pf - 1), ptosis: 0.4, ratio: 0.38, sc: Math.max(1.04, (W * 1.08) / W0) };
   return { R: side, L: side, aug: { plane: AUGSIM.plane, fill: 1, vis: 1, shapeR: AUGSIM.shape, shapeL: AUGSIM.shape, ml: AUGSIM.ml, prof: pf, noWrap: true } };
 }
 SCENARIOS.push({
@@ -404,7 +404,7 @@ function geomOf(p) {
   // 突度由上下胸圍差決定;基底寬度由下胸圍(胸廓大小)決定
   const P = p.Pabs ?? (p.P / 0.064) * M.d * 0.0031 * sc; // 係數依 iRBSM 平均形狀的側面剖面校正
   // 基底寬度:胸廓大小(下胸圍)為主,罩杯越大基底也越寬
-  const W = clampN(M.ub * 0.17 * (1 + 0.025 * (M.d - 15)), 10, 21) / 100 * sc;
+  const W = clampN(M.ub * 0.17 * (1 + 0.04 * (M.d - 15)), 10, 22) / 100 * sc; // 每差一級罩杯(2.5 cm)基底約寬 10%
   let pt = p.pt ?? PROFILE.pt * (p.ptosis ?? 1);
   if (round) pt = Math.min(pt, 0.2);
   const full = round ? 0.95 : p.upper != null ? 0.35 + p.upper : PROFILE.full;
@@ -414,16 +414,17 @@ function geomOf(p) {
   const xN = M.nn / 200; const uN = xN - C_X;
   const yV = NOTCH_Y - Math.sqrt(Math.max((M.snn / 100) ** 2 - xN ** 2, 0.0025));
   // 內側到乳溝(由乳房內緣距離決定);外側到腋前線,約基底寬度的一半(對照臨床照片校正,原本外側太窄)
-  const Rmed = clampN(xN - M.imd / 200, 0.04, W * 0.75); const Rlat = clampN(W * 0.52, 0.05, 0.19 - xN);
-  const H = W * 0.95; const Rup = ratio * H, Rlo = (1 - ratio) * H;
+  const Rmed = clampN(xN - M.imd / 200, 0.04, W * 0.75); const Rlat = clampN(W * 0.52, 0.05, 0.165 - xN);
+  // 上緣:乳房從第二肋(鎖骨下約 5–6 cm)開始,依解剖位置固定,不再只是乳頭往上一個比例;下緣依比例
+  const H = W * 0.95; const Rlo = (1 - ratio) * H;
+  const Rup = clampN(NOTCH_Y - 0.058 - C_Y - (yV - C_Y + lift), 0.05, 0.14) * (0.85 + 0.3 * ratio);
   const soft = PROFILE.mode === 'meas' ? clampN(1 + 0.04 * (bmi() - 25), 0.9, 1.4) : 1;
   const dropA = p.shape === 'natural' && P > 0.0005 ? soft * (0.045 * pt) * Math.sqrt(W / 0.1275) * Math.min(P / 0.054, 1.4) * (1 - Math.min(lift / 0.02, 0.6)) : 0;
   // 量測模式:量到的乳頭高度已含下垂,基底往上補回;罩杯快選:量測值代表未下垂,下垂時乳頭往下
   // 下垂拆成兩部分:四成是整個乳房往下滑(上極跟著變扁),六成是組織下垂;避免只拉長上半部
   const dropS = 0.75 * dropA, slideD = 0.25 * dropA;
-  const wBase = Math.min(yV - C_Y + lift, NOTCH_Y - 0.055 - C_Y - Rup); // 未下垂時的乳房中心,用來定乳房下皺褶(下垂時皺褶不動)
+  const wBase = yV - C_Y + lift; // 未下垂時的乳房中心,用來定乳房下皺褶(下垂時皺褶不動)
   let wN = yV - C_Y + lift + (PROFILE.mode === 'meas' ? 0.85 * dropS : -slideD);
-  wN = Math.min(wN, NOTCH_Y - 0.055 - C_Y - Rup); // 乳房上緣不超過約第二肋
   g = { P, sc: W / 0.1275, pt, full, ratio, top: wN + Rup, bot: wN - Rlo, wN, uN, shape: p.shape, round, Rup, Rlo, Rlat, Rmed, aU: Math.max(1.4 - 0.65 * full, 1.05), dropA: dropS };
   g.wV = g.wN - 0.85 * g.dropA; // 下垂後看到的乳頭高度(基底座標)
   g.imf = wBase - 0.9 * Rlo; // 看得到的乳房下皺褶(輪廓接回胸壁處,約下緣九成)
@@ -490,6 +491,17 @@ function breastField(du, dw, p) {
 }
 // 乳頭在局部座標的位置(含移位)
 // 乳頭乳暈的小隆起
+// 茶壺狀外形:乳房中段往外、往下鼓出,超過基底範圍(高度場本身做不到,另外加切向位移)
+// 回傳 [往外側, 往上] 的位移(局部座標,公尺);越接近基底邊緣 D 越小、位移自然收為 0
+function bulgeOf(du, dw, D, g) {
+  if (g.P < 0.008 || D <= 0) return [0, 0];
+  const u = du - g.uN, w = dw - g.wN; const r = Math.hypot(u, w); if (r < 1e-5) return [0, 0];
+  const x = u / rBlend(u, g.Rmed, g.Rlat, g.sc), y = w / rBlend(w, g.Rlo, g.Rup, g.sc); const t = Math.min(Math.hypot(x, y), 1);
+  const ux = u / r, wy = w / r;
+  const dirW = 0.25 + 0.6 * Math.max(0, -wy) + 0.3 * Math.max(0, ux); // 下方與外側鼓出較多,上方很少
+  const b = 0.36 * D * smooth(0.08, 0.6, t) * dirW * Math.min(g.P / 0.045, 1.0) * (1 - 0.35 * smooth(0.055, 0.08, g.P)); // 大體積(多為假體)時鼓出量收斂
+  return [ux * b, wy * b];
+}
 // 平滑取大值(假體包覆與乳房外形交界不出現摺痕)
 const smax = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.max(a, b) + h * h * k / 4; };
 function nipBump(du, dw, p, g) { if (!p.areola) return 0; const dn2 = (du - g.nU - (p.nsu || 0)) ** 2 + (dw - g.nW - (p.nsw || 0)) ** 2; return 0.004 * Math.exp(-dn2 / (2 * 0.0045 ** 2)); }
@@ -515,7 +527,7 @@ function prepBreastRegions(skinGeom) {
       if (z < 0.0 || Math.abs(x) > 0.19) continue;
       const a = (x - c.x) * s, b = y - c.y;
       if ((a / 0.125) ** 2 + (b / 0.135) ** 2 > 1.2) continue;
-      idx.push(i); du.push(a); dw.push(b); wt.push(smooth(0.0, 0.035, z));
+      idx.push(i); du.push(a); dw.push(b); wt.push(smooth(0.0, 0.035, z) * (1 - smooth(0.165, 0.19, Math.abs(x)))); // 腋下邊界前漸減,避免出現台階
     }
     regions[key] = { s, c, idx: Int32Array.from(idx), du: Float32Array.from(du), dw: Float32Array.from(dw), wt: Float32Array.from(wt), frame: sideFrame(s) };
   }
@@ -1371,7 +1383,8 @@ function updateBreasts(inst, s) {
       const i = reg.idx[j]; let { D, drop } = breastField(reg.du[j], reg.dw[j], p); const wk = reg.wt[j]; D *= wk; drop *= wk;
       if (thin) { D = wrap(i) * wk + nipBump(reg.du[j], reg.dw[j], p, g) * smooth(0.002, 0.01, wrap(i)); drop = 0; }
       else if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D - 0.012) D = smax(D, need, 0.012) + (need > D ? nipBump(reg.du[j], reg.dw[j], p, g) : 0); }
-      arr[i * 3] += f.x * D; arr[i * 3 + 1] += f.y * D - drop; arr[i * 3 + 2] += f.z * D;
+      const [bu, bw] = thin ? [0, 0] : bulgeOf(reg.du[j], reg.dw[j], D, g);
+      arr[i * 3] += f.x * D + reg.s * bu; arr[i * 3 + 1] += f.y * D - drop + bw; arr[i * 3 + 2] += f.z * D;
       const dn = (reg.du[j] - nu) ** 2 + (reg.dw[j] - nw) ** 2;
       if (D > 0.01 && dn < 0.0004 && D - dn * 20 > maxD) { maxD = D - dn * 20; maxI = i; }
       if (Math.abs(reg.du[j] - nu) < 0.012 && g.P > 0.01) { const y = arr[i * 3 + 1]; if (D > 0.33 * g.P && y > top) top = y; if (D > 0.05 * g.P && y < low) low = y; }
@@ -1390,7 +1403,8 @@ function updateBreasts(inst, s) {
         const i = src[v], j = regionK[v]; let { D, drop } = breastField(reg.du[j], reg.dw[j], p); D *= reg.wt[j]; drop *= reg.wt[j];
         if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D) D = need + nipBump(reg.du[j], reg.dw[j], p, g); }
         const d = Math.max(D * scale + off, -0.003);
-        pa[v * 3] = base[i * 3] + f.x * d; pa[v * 3 + 1] = base[i * 3 + 1] + f.y * d - drop * scale; pa[v * 3 + 2] = base[i * 3 + 2] + f.z * d;
+        const [bu, bw] = bulgeOf(reg.du[j], reg.dw[j], D, g);
+        pa[v * 3] = base[i * 3] + f.x * d + reg.s * bu * scale; pa[v * 3 + 1] = base[i * 3 + 1] + f.y * d - drop * scale + bw * scale; pa[v * 3 + 2] = base[i * 3 + 2] + f.z * d;
       }
       gm.attributes.position.needsUpdate = true; gm.computeVertexNormals(); gm.computeBoundingSphere();
       m.userData.sideP = g.P;
