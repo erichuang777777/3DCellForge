@@ -498,8 +498,11 @@ function bulgeOf(du, dw, D, g) {
   const u = du - g.uN, w = dw - g.wN; const r = Math.hypot(u, w); if (r < 1e-5) return [0, 0];
   const x = u / rBlend(u, g.Rmed, g.Rlat, g.sc), y = w / rBlend(w, g.Rlo, g.Rup, g.sc); const t = Math.min(Math.hypot(x, y), 1);
   const ux = u / r, wy = w / r;
-  const dirW = 0.25 + 0.6 * Math.max(0, -wy) + 0.3 * Math.max(0, ux); // 下方與外側鼓出較多,上方很少
-  const b = 0.36 * D * smooth(0.08, 0.6, t) * dirW * Math.min(g.P / 0.045, 1.0) * (1 - 0.35 * smooth(0.055, 0.08, g.P)); // 大體積(多為假體)時鼓出量收斂
+  // 四周都往外鼓(下方最多、外側次之、內側再次、上方最少),最大鼓出落在基底與乳頭之間偏外圈處,
+  // 鼓出量大於該處到基底邊緣的距離,所以中段會超出基底(側面與仰視都看得到「下緣內收」)
+  const dirW = 0.25 + 0.85 * Math.max(0, -wy) + 0.15 * Math.max(0, ux) + 0.1 * Math.max(0, -ux) - 0.15 * Math.max(0, wy);
+  const ring = smooth(0.12, 0.6, t) * (1 - smooth(0.78, 1.0, t)); // 鼓出在中段最大,接近基底時平順收回,下緣形成柔和的皺褶而非硬摺
+  const b = 0.9 * D * ring * dirW * Math.min(g.P / 0.04, 1.15) * (1 - 0.3 * smooth(0.06, 0.085, g.P));
   return [ux * b, wy * b];
 }
 // 平滑取大值(假體包覆與乳房外形交界不出現摺痕)
@@ -790,6 +793,36 @@ function buildAbdFat(inst) {
 }
 function addPartTo(inst, name, mesh, layer, info) {
   mesh.name = name; mesh.userData.layer = layer; mesh.userData.info = info; inst.root.add(mesh); inst.parts.push(mesh); inst.byName.set(name, mesh); return mesh;
+}
+
+// ---------- 乳頭感覺神經:第 3–5 肋間神經的外側皮支與前皮支(示意走向) ----------
+function updateICN(inst, s) {
+  const on = (s.icn || 0) > 0.01;
+  if (!on) { if (inst.icnG) inst.icnG.visible = false; return; }
+  const parts = [];
+  for (const key of ['R', 'L']) { const n = inst.nipple?.[key]; if (n) parts.push(key + n.toArray().map((v) => v.toFixed(3)).join(',')); }
+  const k = parts.join('|');
+  if (inst.icnKey !== k) {
+    inst.icnKey = k; if (inst.icnG) { inst.root.remove(inst.icnG); inst.icnG.traverse((o) => o.geometry?.dispose()); }
+    const g = new THREE.Group(); const mat = atlasMat('plain', ...PAL.nerve, { hatch: 0 });
+    for (const key of ['R', 'L']) {
+      const n = inst.nipple?.[key]; if (!n) continue; const sg = SIDES[key];
+      const tip = n.clone().add(new THREE.Vector3(0, 0, -0.006));
+      [[1.31, 0.6], [1.27, 1], [1.23, 0.6]].forEach(([y, wgt], i) => {
+        const r = 0.0007 + 0.0006 * wgt; // 第四肋間神經最粗
+        // 外側皮支:腋中線穿出,沿胸壁深層往內,最後穿過乳腺到乳頭
+        const lat = [new THREE.Vector3(sg * 0.165, y - 0.01, 0.0), new THREE.Vector3(sg * 0.15, y, 0.05), new THREE.Vector3(sg * 0.125, y + 0.002, 0.085), n.clone().lerp(new THREE.Vector3(sg * 0.11, y, 0.09), 0.55), tip];
+        g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(lat), 48, r, 6, false), mat));
+        // 前皮支:胸骨旁穿出,往外到乳暈內側
+        const ant = [new THREE.Vector3(sg * 0.02, y + 0.005, 0.105), new THREE.Vector3(sg * 0.045, y + 0.002, 0.118), n.clone().lerp(new THREE.Vector3(sg * 0.06, y, 0.12), 0.5), tip];
+        g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(ant), 32, r * 0.75, 6, false), mat));
+        if (key === 'R') { const lb = labelSprite(`第 ${i + 3} 肋間`, '#c9a227', 200); lb.scale.multiplyScalar(2); lb.position.copy(lat[1]).add(new THREE.Vector3(-0.04, 0, 0.02)); g.add(lb); }
+      });
+    }
+    g.traverse((o) => { if (o.isMesh) { o.userData.info = 'icn'; o.renderOrder = 9; } });
+    inst.icnG = g; inst.root.add(g);
+  }
+  inst.icnG.visible = true;
 }
 
 // ---------- DIEP 穿通枝地圖(以肚臍為原點的 CTA 報告示意) ----------
@@ -1263,7 +1296,7 @@ const BASE_STATE = {
   tumorAt: null, custom: [], keepGland: false, xray: false,
   aug: { plane: null, fill: 0, vis: 0, shapeR: 'round', shapeL: 'round' }, glandShell: 1, glandDetail: 0, hiGland: '', density: 1.5, fatOp: null, lymph: 0,
   gf: { tech: null, t: 0, vis: 0, arc: 0, zone: null }, wscars: [], woundAt: null, perfAt: null, paddleR: null, fatg: 0,
-  nodes: 0, dye: 0, flow: 0, slnGone: 0, clipGone: 0, gI: 0, gII: 0, gIII: 0, probe: 0, drain: 0, clip: 0, hiNode: '', vesselsOnly: [], perfMap: 0, perfCourse: 0, zones: 0, sec: 0, imfLine: 0
+  nodes: 0, dye: 0, flow: 0, slnGone: 0, clipGone: 0, gI: 0, gII: 0, gIII: 0, probe: 0, drain: 0, clip: 0, hiNode: '', vesselsOnly: [], perfMap: 0, perfCourse: 0, zones: 0, sec: 0, imfLine: 0, icn: 0
 };
 function merge(a, b) {
   if (b === undefined) return structuredClone(a);
@@ -1383,7 +1416,9 @@ function updateBreasts(inst, s) {
       const i = reg.idx[j]; let { D, drop } = breastField(reg.du[j], reg.dw[j], p); const wk = reg.wt[j]; D *= wk; drop *= wk;
       if (thin) { D = wrap(i) * wk + nipBump(reg.du[j], reg.dw[j], p, g) * smooth(0.002, 0.01, wrap(i)); drop = 0; }
       else if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D - 0.012) D = smax(D, need, 0.012) + (need > D ? nipBump(reg.du[j], reg.dw[j], p, g) : 0); }
-      const [bu, bw] = thin ? [0, 0] : bulgeOf(reg.du[j], reg.dw[j], D, g);
+      // 鼓出只作用在朝前的胸壁(側胸壁的頂點和前方共用同一組平面座標,推了會摺疊)
+      const fz = smooth(0.06, 0.1, base[i * 3 + 2]);
+      const [bu, bw] = thin ? [0, 0] : bulgeOf(reg.du[j], reg.dw[j], D, g).map((v) => v * fz);
       arr[i * 3] += f.x * D + reg.s * bu; arr[i * 3 + 1] += f.y * D - drop + bw; arr[i * 3 + 2] += f.z * D;
       const dn = (reg.du[j] - nu) ** 2 + (reg.dw[j] - nw) ** 2;
       if (D > 0.01 && dn < 0.0004 && D - dn * 20 > maxD) { maxD = D - dn * 20; maxI = i; }
@@ -1403,7 +1438,7 @@ function updateBreasts(inst, s) {
         const i = src[v], j = regionK[v]; let { D, drop } = breastField(reg.du[j], reg.dw[j], p); D *= reg.wt[j]; drop *= reg.wt[j];
         if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D) D = need + nipBump(reg.du[j], reg.dw[j], p, g); }
         const d = Math.max(D * scale + off, -0.003);
-        const [bu, bw] = bulgeOf(reg.du[j], reg.dw[j], D, g);
+        const fz = smooth(0.06, 0.1, base[i * 3 + 2]); const [bu, bw] = bulgeOf(reg.du[j], reg.dw[j], D, g).map((v) => v * fz);
         pa[v * 3] = base[i * 3] + f.x * d + reg.s * bu * scale; pa[v * 3 + 1] = base[i * 3 + 1] + f.y * d - drop * scale + bw * scale; pa[v * 3 + 2] = base[i * 3 + 2] + f.z * d;
       }
       gm.attributes.position.needsUpdate = true; gm.computeVertexNormals(); gm.computeBoundingSphere();
@@ -1459,6 +1494,7 @@ function applyState(inst, s, tweening = false) {
   }
   if (inst.abdFat) setOpacity(inst.abdFat, inst.abdFat.material.uniforms.uOpacity.value * (s.ghostSkin > 0.9 ? 1 : 0) * (1 - s.wound) * (peel > 0.02 ? 1 : 0));
   updatePerfMap(inst, s);
+  updateICN(inst, s);
   if (inst.imfLine) { inst.imfLine.visible = s.imfLine > 0.5 && !!inst.geo?.R; if (inst.imfLine.visible) inst.imfLine.position.y = inst.regions.R.c.y + inst.geo.R.imf; }
   const deep = peel >= 1.5 || s.ghostSkin < 0.9 || s.ghostMus < 0.9;
   for (const [name, obj] of inst.byName) if (obj.userData.vessel) { obj.userData.mat.uniforms.uHi.value = s.vessels.includes(name) ? 1 : 0; obj.visible = deep && (!s.vesselsOnly.length || s.vesselsOnly.includes(name)) && (!LIMB_V.test(name) || s.vessels.includes(name) || s.vesselsOnly.includes(name)); }

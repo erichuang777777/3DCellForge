@@ -137,6 +137,7 @@ export const SCENARIOS = [
       { title: '小葉與乳癌的起點', cam: 'glandZoom', peel: 2, text: '乳管末端是製造乳汁的小葉(終末乳管小葉單位)。大部分乳癌由這裡長出:從乳管長出的稱乳管癌,從小葉長出的稱小葉癌。', state: { glandShell: 0, glandDetail: 1, hiGland: 'lobule' } },
       { title: '脂肪型乳房(緻密度 A/B)', cam: 'oblique', peel: 2, text: '乳腺組織少、脂肪多(黃色半透明)。乳房攝影上脂肪是暗的,腫瘤較容易看出來。', state: { glandShell: 0, glandDetail: 1, density: 0, fatOp: 0.4 } },
       { title: '緻密型乳房(緻密度 C/D)', cam: 'oblique', peel: 2, text: '乳腺組織多。乳房攝影上乳腺與腫瘤都是白的,容易被遮住,常需加做超音波或 MRI。亞洲女性緻密型乳房比例較高。', state: { glandShell: 0, glandDetail: 1, density: 3, fatOp: 0.4 } },
+      { title: '乳頭的感覺神經', cam: 'oblique', text: '乳頭乳暈的感覺主要來自第三到第五肋間神經(黃線):外側皮支從側胸沿胸壁往內走,以第四肋間神經外側皮支最重要;前皮支從胸骨旁往外走。手術時保留這些分支(特別是外側深層的第四肋間神經),乳頭感覺比較能維持。', state: { icn: 1, ghostSkin: 0.45, ghostMus: 0.8 } },
       { title: '淋巴引流與前哨淋巴結', cam: 'oblique', peel: 2, text: '乳房的淋巴大多流向腋下。最先接收淋巴的是前哨淋巴結(綠色,胸大肌已半透明),胸骨旁另有內乳淋巴結,手術時先檢查它,沒有轉移時通常可以不用清除整個腋下淋巴結。', state: { glandShell: 0, glandDetail: 1, lymph: 1, hiGland: 'sentinel', ghostMus: 0.35 } }
     ],
     pros: ['了解腫瘤位置與乳管、小葉的關係', '理解為什麼緻密型乳房需要加做超音波或 MRI', '理解前哨淋巴結切片的目的'],
@@ -213,6 +214,7 @@ export const INFO = {
   cooper: { zh: 'Cooper 韌帶', en: "Cooper's ligament", text: '連接乳腺與皮膚的纖維束,支撐乳房形狀。', clin: '腫瘤牽拉時皮膚會凹陷,是重要的理學檢查徵象。' },
   node: { zh: '腋下淋巴結', en: 'Axillary lymph node', text: '乳房淋巴主要流向這裡。', clin: '淋巴結轉移與否影響分期與後續治療。' },
   sentinel: { zh: '前哨淋巴結', en: 'Sentinel lymph node', text: '最先接收乳房淋巴的淋巴結。', clin: '前哨淋巴結切片沒有轉移時,通常可避免腋下淋巴結廓清,減少手臂水腫風險。' },
+  icn: { zh: '肋間神經皮支', en: 'Intercostal nerve (cutaneous branches)', text: '第三到第五肋間神經的外側與前皮支,負責乳房與乳頭的感覺。', clin: '第四肋間神經外側皮支是乳頭感覺最主要的來源;縮乳、隆乳或保留乳頭的全切時盡量保留。' },
   lymph: { zh: '淋巴管', en: 'Lymphatic vessel', text: '把組織液與免疫細胞帶到淋巴結的細管。', clin: '' },
   aug: { zh: '隆乳假體', en: 'Breast implant', text: '矽膠或食鹽水假體,有圓形與水滴形。', clin: '需定期追蹤;包膜攣縮、破裂與罕見的 BIA-ALCL 是主要風險。' },
   glutmax: { zh: '臀大肌', en: 'Gluteus maximus', text: '臀部最大的肌肉。', clin: 'SGAP、IGAP 皮瓣的穿通枝穿過這塊肌肉,肌肉本身保留。' },

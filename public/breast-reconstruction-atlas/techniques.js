@@ -347,7 +347,22 @@ const TAD = {
   meta: { src: '標記淋巴結 + 前哨淋巴結', muscle: '否', vessel: '—', mode: '標記夾 + 追蹤劑', scar: '腋下小切口', risk: '定位失敗時需再處理' }
 };
 
-export const EXTRA_SCENARIOS = [AX_ANAT, SLNB, ALND, TAD, MAST_TYPES, IMPLANT_PLANES, FAT_GRAFT, NIPPLE, SYMM, ...TECHS.map(techScenario)];
+// 縮乳(乳房縮小整形):大而下垂的乳房,切除下方多餘組織與皮膚、上提乳頭
+const REDUCTION = {
+  id: 'reduction', cat: 'cosmetic', tag: '美容手術', name: '乳房縮小整形(縮乳)', short: '縮乳',
+  one: '切除多餘的乳腺、脂肪與皮膚,把乳頭乳暈往上移到乳房的最高點,讓乳房變小、變挺。常用於乳房過大造成肩頸痠痛、皮膚發炎,或重建後讓健側與重建側對稱。',
+  steps: [
+    { title: '術前:大而下垂', cam: 'ptside', text: '乳房體積大,乳頭低於乳房下皺褶(第二到第三度下垂),重量常造成肩頸痠痛、內衣肩帶勒痕與皺褶處皮膚炎。', state: { R: { P: 0.09, sc: 1.18, pt: 2.4, upper: 0.2 }, L: { P: 0.09, sc: 1.18, pt: 2.4, upper: 0.2 } } },
+    { title: '術前設計(倒 T)', cam: 'front', text: '站姿畫線:新的乳頭位置約在乳房下皺褶高度的正前方;虛線範圍內的皮膚與下方組織會被切除。乳頭保留在一塊帶血管的組織(蒂)上往上移,以維持血流與感覺。', state: { R: { P: 0.09, sc: 1.18, pt: 2.4, upper: 0.2 }, L: { P: 0.09, sc: 1.18, pt: 2.4, upper: 0.2 }, custom: [...wiseDesign('R'), ...wiseDesign('L')] } },
+    { title: '術後', cam: 'ptside', dur: 2600, text: '乳房變小、上提,乳頭回到乳房最突出處,上半部較飽滿。疤痕呈倒 T(乳暈一圈、往下一條、乳房下皺褶一條)。乳頭感覺多數保留,但可能暫時或永久變化;日後哺乳能力可能受影響。', state: { R: { P: 0.06, sc: 1.02, pt: 0.1, lift: 0.006, upper: 0.5 }, L: { P: 0.06, sc: 1.02, pt: 0.1, lift: 0.006, upper: 0.5 }, custom: [...invT('R'), ...invT('L')] } },
+    { title: '術後正面', cam: 'front', text: '兩側大小與高度一致。疤痕約 6 到 12 個月逐漸變淡。', state: { R: { P: 0.06, sc: 1.02, pt: 0.1, lift: 0.006, upper: 0.5 }, L: { P: 0.06, sc: 1.02, pt: 0.1, lift: 0.006, upper: 0.5 }, custom: [...invT('R'), ...invT('L')] } }
+  ],
+  pros: ['減輕肩頸背痛、皮膚炎', '外形較挺、衣服好穿', '病人滿意度通常很高'],
+  cons: ['倒 T 疤痕', '乳頭感覺可能改變', '哺乳能力可能受影響', '傷口癒合問題(三叉交會處)'],
+  fit: ['乳房過大造成症狀', '大而下垂的乳房', '重建後健側要縮小對稱'],
+  meta: { src: '自身乳房組織', muscle: '否', vessel: '乳頭的血管蒂', mode: '切除與上提', scar: '倒 T', risk: '癒合問題、感覺改變' }
+};
+export const EXTRA_SCENARIOS = [AX_ANAT, SLNB, ALND, TAD, MAST_TYPES, IMPLANT_PLANES, FAT_GRAFT, NIPPLE, SYMM, REDUCTION, ...TECHS.map(techScenario)];
 
 // 模擬器 Level III:依位置推薦的部分重建術式
 export const ZONE_L3 = {
