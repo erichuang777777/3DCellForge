@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { surfaceShape, implantEnvelopeShape } from './surface.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SCENARIOS as BASE_SCENARIOS, END_STATES as BASE_END, COMPARE_DEFAULT, INFO, LAYER_NAMES, PERF_MAP } from './content.js';
@@ -398,7 +399,7 @@ const bmi = () => PROFILE.weight / (PROFILE.height / 100) ** 2;
 const GEO = new Map();
 const NOTCH_Y = 1.41, C_X = 0.097, C_Y = 1.252; // 胸骨上切跡高度、乳房區域中心(模型座標)
 function geomOf(p) {
-  const key = JSON.stringify([p.P, p.Pabs, p.sc, p.shape, p.lift, p.pt, p.ptosis, p.upper, p.ratio, PROFILE.ver]);
+  const key = JSON.stringify([p.P, p.Pabs, p.sc, p.shape, p.lift, p.pt, p.ptosis, p.upper, p.ratio, p.implantEnvelope, PROFILE.ver]);
   let g = GEO.get(key); if (g) return g;
   const M = measures(); const sc = p.sc || 1; const round = p.shape === 'round';
   // 突度由上下胸圍差決定;基底寬度由下胸圍(胸廓大小)決定
@@ -420,14 +421,14 @@ function geomOf(p) {
   const Rup = clampN(NOTCH_Y - 0.058 - C_Y - (yV - C_Y + lift), 0.05, 0.14) * (0.85 + 0.3 * ratio);
   const soft = PROFILE.mode === 'meas' ? clampN(1 + 0.04 * (bmi() - 25), 0.9, 1.4) : 1;
   const dropA = p.shape === 'natural' && P > 0.0005 ? soft * (0.045 * pt) * Math.sqrt(W / 0.1275) * Math.min(P / 0.054, 1.4) * (1 - Math.min(lift / 0.02, 0.6)) : 0;
-  // 量測模式:量到的乳頭高度已含下垂,基底往上補回;罩杯快選:量測值代表未下垂,下垂時乳頭往下
-  // 下垂拆成兩部分:四成是整個乳房往下滑(上極跟著變扁),六成是組織下垂;避免只拉長上半部
-  const dropS = 0.75 * dropA, slideD = 0.25 * dropA;
+  // 距離輸入是示意包絡的定位條件,不代表病人專屬表面擬合
+  // 胸壁附著不隨下垂滑動;位移在 surfaceShape 的固定邊界內完成
+  const dropS = (p.implantEnvelope ? 0.75 : 1) * dropA;
   const wBase = yV - C_Y + lift; // 未下垂時的乳房中心,用來定乳房下皺褶(下垂時皺褶不動)
-  let wN = yV - C_Y + lift + (PROFILE.mode === 'meas' ? 0.85 * dropS : -slideD);
+  const wN = wBase + (p.implantEnvelope ? (PROFILE.mode === 'meas' ? .85 * dropS : -.25 * dropA) : 0); // 自然包絡附著固定;包覆假體保留既有定位
   g = { P, sc: W / 0.1275, pt, full, ratio, top: wN + Rup, bot: wN - Rlo, wN, uN, shape: p.shape, round, Rup, Rlo, Rlat, Rmed, aU: Math.max(1.4 - 0.65 * full, 1.05), dropA: dropS };
-  g.wV = g.wN - 0.85 * g.dropA; // 下垂後看到的乳頭高度(基底座標)
-  g.imf = wBase - 0.9 * Rlo; // 看得到的乳房下皺褶(輪廓接回胸壁處,約下緣九成)
+  g.wV = g.wN - (p.implantEnvelope ? .85 : 1) * g.dropA; // 下垂後看到的乳頭高度(基底座標)
+  g.imf = p.implantEnvelope ? wBase - .9 * Rlo : g.bot; // 看得到的乳房下皺褶(包絡下緣接回胸壁處)
   // 下垂時乳頭沿乳房表面往下、往外滑,朝向外下方
   const slide = g.round ? 0 : Math.max(pt - 0.8, 0); g.nU = g.uN + 0.004 * slide * g.sc; g.nW = g.wN - 0.0075 * slide * g.sc;
   if (GEO.size > 400) GEO.clear();
@@ -443,67 +444,39 @@ function estVolume() {
 }
 // 四個方向的半徑平滑過渡(避免在乳頭十字方向出現摺痕)
 const rBlend = (v, a, b, sc) => a + (b - a) * smooth(-0.025 * sc, 0.025 * sc, v);
-// 正面看:水滴形。下極飽滿圓弧、上極依飽滿度呈凹、直或凸;乳頭在最突出處
-function profile(du, dw, g) {
-  const u = du - g.uN, w = dw - g.wN;
-  const x = u / rBlend(u, g.Rmed, g.Rlat, g.sc), y = w / rBlend(w, g.Rlo, g.Rup, g.sc);
-  const t2 = x * x + y * y; if (t2 >= 1) return 0;
-  if (g.shape === 'flat' || g.P < 0.0005) return 0.0015 * (1 - t2);
-  const t = Math.sqrt(t2);
-  // 單一連續曲面 D = P·(1 − t^m)^b,m、b 隨方向平滑變化(不再由圓頂、斜坡、圓角拼接,避免稜線與折角):
-  //  m:中段飽滿程度(越大越圓);b:接到胸壁的方式(b > 1 相切平順,b ≈ 1 形成有角度的乳房下皺褶)
-  const dy = t > 1e-6 ? y / t : 0;
-  const lo = smooth(0, 0.9, -dy), up = smooth(0, 0.9, dy);
-  const sag = Math.min(g.pt, 1), full = clampN(g.full, 0, 1);
-  const mSide = g.round ? 3.2 : 3.0;
-  const mLo = g.round ? 2.8 : 2.6 + 0.4 * sag;
-  const mUp = g.round ? 2.6 : 1.4 + 1.2 * full; // 上極:從第二肋緩慢、近直線升到乳頭;飽滿度高時略外凸
-  const bSide = 1.3, bLo = g.round ? 0.95 : 1.0 - 0.1 * sag, bUp = 1.6;
-  const m = mSide + (mLo - mSide) * lo + (mUp - mSide) * up;
-  const b = bSide + (bLo - bSide) * lo + (bUp - bSide) * up;
-  return g.P * Math.pow(1 - Math.pow(t, m), b);
-}
+// 平滑環形包絡與下極回收;乳頭、病灶與重力分開計算。
+function profile(du, dw, g) { return surfaceShape(du, dw, g).D; }
 function breastField(du, dw, p) {
   const g = p.g || geomOf(p);
-  let D = profile(du, dw, g);
-  if (p.areola && g.P > 0.008) {
-    const dn2 = (du - g.nU - (p.nsu || 0)) ** 2 + (dw - g.nW - (p.nsw || 0)) ** 2;
-    D += 0.004 * Math.exp(-dn2 / (2 * 0.0045 ** 2));
-  }
+  const shape = p.implantEnvelope ? implantEnvelopeShape(du, dw, g) : surfaceShape(du, dw, g);
+  let D = shape.D;
+  if (p.implantEnvelope && p.areola && g.P > .008) D += nipBump(du, dw, p, g);
   const D0 = D;
   if (p.defect > 0) {
     const q = Q_N[p.dq || 'uoq'];
-    D -= 1.6 * p.defect * Math.exp(-((du - g.uN - q[0] * g.sc) ** 2 + (dw - g.wV - q[1] * g.sc) ** 2) / (2 * 0.022 ** 2)); // 加深,讓切除後的凹陷看得出來
+    D -= 1.6 * p.defect * Math.exp(-((du - g.uN - q[0] * g.sc) ** 2 + (dw - (p.implantEnvelope ? g.wV : g.wN) - q[1] * g.sc) ** 2) / (2 * 0.022 ** 2)); // 加深,讓切除後的凹陷看得出來
   }
   for (const q of p.defects || []) if (q.d > 0) D -= 1.7 * q.d * Math.exp(-((du - q.u) ** 2 + (dw - q.w) ** 2) / (2 * q.s ** 2));
   if (D < D0) D = D0 > 0 ? Math.max(D, D0 * 0.08) : D0; // 凹陷不會深過原有組織厚度
-  let drop = 0;
-  if (g.dropA > 0 && D0 > 1e-6) {
-    // 下垂:乳頭與下極往下掉;往兩側與上方衰減較快,避免皮膚折疊
-    const f = Math.max(D / g.P, 0); const u = du - g.uN, w = dw - g.wN;
-    const x = u / rBlend(u, g.Rmed, g.Rlat, g.sc), y = w / rBlend(w, g.Rlo, g.Rup, g.sc); const r = Math.hypot(x, y); const t = Math.min(r, 1);
-    const downness = y < 0 && r > 1e-6 ? -y / r : 0; const lo = Math.min(Math.max(-y, 0), 1);
-    // 整個乳房像袋子一樣往下垂(依組織厚度),下緣維持寬 U 形而不是收成錐狀
-    // 外圈也一起下移(只在邊緣才收到 0),避免上半部被拉成 V 形
-    drop = g.dropA * Math.max(Math.pow(Math.min(f, 1.1), 0.85), 0.55 * smooth(1.0, 0.7, t)) * (1 + 0.2 * lo * (0.5 + 0.5 * downness));
+  // Nipple detail and resection dents must not alter the gravity field.
+  if (p.implantEnvelope && g.dropA > 0 && D0 > 1e-6) {
+    const u = du - g.uN, w = dw - g.wN;
+    const x = u / rBlend(u, g.Rmed, g.Rlat, g.sc), y = w / rBlend(w, g.Rlo, g.Rup, g.sc);
+    const r = Math.hypot(x, y), t = Math.min(r, 1), downness = y < 0 && r > 1e-6 ? -y / r : 0;
+    const f = Math.max(D / g.P, 0);
+    return { D, drop: g.dropA * Math.max(Math.pow(Math.min(f, 1.1), .85), .55 * smooth(1, .7, t)) * (1 + .2 * clampN(-y, 0, 1) * (.5 + .5 * downness)) };
   }
-  return { D, drop };
+  return { D, drop: p.implantEnvelope ? 0 : shape.drop };
 }
-// 乳頭在局部座標的位置(含移位)
-// 乳頭乳暈的小隆起
-// 茶壺狀外形:乳房中段往外、往下鼓出,超過基底範圍(高度場本身做不到,另外加切向位移)
-// 回傳 [往外側, 往上] 的位移(局部座標,公尺);越接近基底邊緣 D 越小、位移自然收為 0
-function bulgeOf(du, dw, D, g) {
-  if (g.P < 0.008 || D <= 0) return [0, 0];
-  const u = du - g.uN, w = dw - g.wN; const r = Math.hypot(u, w); if (r < 1e-5) return [0, 0];
-  const x = u / rBlend(u, g.Rmed, g.Rlat, g.sc), y = w / rBlend(w, g.Rlo, g.Rup, g.sc); const t = Math.min(Math.hypot(x, y), 1);
-  const ux = u / r, wy = w / r;
-  // 四周都往外鼓(下方最多、外側次之、內側再次、上方最少),最大鼓出落在基底與乳頭之間偏外圈處,
-  // 鼓出量大於該處到基底邊緣的距離,所以中段會超出基底(側面與仰視都看得到「下緣內收」)
-  // 只往左右溫和加寬;不往下推(往下推會把下極擠到基底邊緣,形成圓盤般的直壁)
-  const dirW = 0.15 * Math.abs(ux) * (1 - Math.abs(wy));
-  const ring = smooth(0.1, 0.45, t) * (1 - smooth(0.45, 1.0, t)); // 鼓出在中段最大,接近基底時平順收回,下緣形成柔和的皺褶而非硬摺
-  const b = Math.min(0.75 * D * ring * dirW * Math.min(g.P / 0.04, 1.15) * (1 - 0.3 * smooth(0.06, 0.085, g.P)), 0.009); // 上限約 9 mm:只是下緣微微內收,不讓下極往下凸出變形
+// Natural geometry uses the shared downward envelope. Wrapped implant
+// scenarios retain their established lateral shaping and placement unchanged.
+function bulgeOf(du, dw, D, g, implantEnvelope = false) {
+  if (!implantEnvelope || g.P < .008 || D <= 0) return [0, 0];
+  const u = du - g.uN, w = dw - g.wN, r = Math.hypot(u, w); if (r < 1e-5) return [0, 0];
+  const x = u / rBlend(u, g.Rmed, g.Rlat, g.sc), y = w / rBlend(w, g.Rlo, g.Rup, g.sc), t = Math.min(Math.hypot(x, y), 1);
+  const ux = u / r, wy = w / r, dir = .15 * Math.abs(ux) * (1 - Math.abs(wy));
+  const ring = smooth(.1, .45, t) * (1 - smooth(.45, 1, t));
+  const b = Math.min(.75 * D * ring * dir * Math.min(g.P / .04, 1.15) * (1 - .3 * smooth(.06, .085, g.P)), .009);
   return [ux * b, wy * b];
 }
 // 平滑取大值(假體包覆與乳房外形交界不出現摺痕)
@@ -511,7 +484,66 @@ const smax = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; retu
 function nipBump(du, dw, p, g) { if (!p.areola) return 0; const dn2 = (du - g.nU - (p.nsu || 0)) ** 2 + (dw - g.nW - (p.nsw || 0)) ** 2; return 0.004 * Math.exp(-dn2 / (2 * 0.0045 ** 2)); }
 function nipLocal(p) { const g = geomOf(p); return [g.nU + (p.nsu || 0), g.nW + (p.nsw || 0)]; }
 
+// Front chest-wall chart: sample the original triangles, not a fitted plane.
+// Following the chest at the displaced (x,y) keeps a descending envelope from
+// cutting through the curved torso. Buckets make repeated queries local.
+function chestChart(geometry) {
+  const pos = geometry.attributes.position, index = geometry.index.array;
+  const step = 0.012, buckets = new Map();
+  const cellKey = (x, y) => `${x},${y}`;
+  for (let k = 0; k < index.length; k += 3) {
+    const a = index[k], b = index[k + 1], c = index[k + 2];
+    const ax = pos.getX(a), ay = pos.getY(a), az = pos.getZ(a);
+    const bx = pos.getX(b), by = pos.getY(b), bz = pos.getZ(b);
+    const cx = pos.getX(c), cy = pos.getY(c), cz = pos.getZ(c);
+    if (Math.max(az, bz, cz) < 0) continue;
+    const det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+    if (Math.abs(det) < 1e-12) continue;
+    const tri = { ax, ay, az, bx, by, bz, cx, cy, cz, det };
+    for (let x = Math.floor(Math.min(ax, bx, cx) / step); x <= Math.floor(Math.max(ax, bx, cx) / step); x++) {
+      for (let y = Math.floor(Math.min(ay, by, cy) / step); y <= Math.floor(Math.max(ay, by, cy) / step); y++) {
+        const key = cellKey(x, y); if (!buckets.has(key)) buckets.set(key, []); buckets.get(key).push(tri);
+      }
+    }
+  }
+  const sample = (x, y, fallback) => {
+    let z = -Infinity;
+    for (const t of buckets.get(cellKey(Math.floor(x / step), Math.floor(y / step))) || []) {
+      const a = ((t.by - t.cy) * (x - t.cx) + (t.cx - t.bx) * (y - t.cy)) / t.det;
+      const b = ((t.cy - t.ay) * (x - t.cx) + (t.ax - t.cx) * (y - t.cy)) / t.det;
+      if (a >= -1e-6 && b >= -1e-6 && a + b <= 1.000001) z = Math.max(z, a * t.az + b * t.bz + (1 - a - b) * t.cz);
+    }
+    if (Number.isFinite(z)) return z;
+    sample.misses++;
+    return fallback; // No extrapolated anatomy; QA reports uncovered samples.
+  };
+  sample.misses = 0;
+  return sample;
+}
+function chestShift(reg, x, y, z, dx, dy) {
+  if (Math.abs(dx) + Math.abs(dy) < 1e-10) return 0;
+  const h0 = reg.chestAt(x, y, z);
+  return reg.chestAt(x + dx, y + dy, h0) - h0;
+}
+
+function applyNippleRelief(geometry, reg, p, g) {
+  if (g.P <= 0.008 || !p.areola || p.implantEnvelope) return;
+  const pos = geometry.attributes.position, normals = geometry.attributes.normal;
+  for (let j = 0; j < reg.idx.length; j++) {
+    const i = reg.idx[j], bump = nipBump(reg.du[j], reg.dw[j], p, g) * reg.wt[j];
+    pos.setXYZ(i, pos.getX(i) + normals.getX(i) * bump, pos.getY(i) + normals.getY(i) * bump, pos.getZ(i) + normals.getZ(i) * bump);
+  }
+}
+
+function envelopePoint(inst, key, point, D, drop) {
+  const reg = inst.regions[key], f = reg.frame.f;
+  const dx = f.x * D, dy = f.y * D - drop;
+  const dz = inst.envelopeMode?.[key] ? 0 : chestShift(reg, point.x, point.y, point.z, dx, dy);
+  return point.add(new THREE.Vector3(dx, dy, f.z * D + dz));
+}
+
 function prepBreastRegions(skinGeom) {
+  const chestAt = chestChart(skinGeom);
   const pos = skinGeom.attributes.position;
   const regions = {};
   for (const [key, s] of Object.entries(SIDES)) {
@@ -524,16 +556,19 @@ function prepBreastRegions(skinGeom) {
       if (d < bd) { bd = d; best = i; }
     }
     const c = new THREE.Vector3().fromBufferAttribute(pos, best);
-    const idx = [], du = [], dw = [], wt = [];
+    const idx = [], du = [], dw = [], wt = [], wrapWt = [];
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
       // 前胸為主;往側胸(z 變小)逐漸減弱變形,避免在邊界撕裂
       if (z < 0.0 || Math.abs(x) > 0.19) continue;
       const a = (x - c.x) * s, b = y - c.y;
-      if ((a / 0.125) ** 2 + (b / 0.135) ** 2 > 1.2) continue;
-      idx.push(i); du.push(a); dw.push(b); wt.push(smooth(0.0, 0.035, z) * (1 - smooth(0.165, 0.19, Math.abs(x)))); // 腋下邊界前漸減,避免出現台階
+      const patchR2 = (a / 0.19) ** 2 + (b / 0.24) ** 2;
+      if (patchR2 >= 1.2) continue;
+      wrapWt.push((a / 0.125) ** 2 + (b / 0.135) ** 2 <= 1.2 ? smooth(0, 0.035, z) * (1 - smooth(0.165, 0.19, Math.abs(x))) : 0);
+      const frontGap = Math.max(0, chestAt(x, y, z) - z);
+      idx.push(i); du.push(a); dw.push(b); wt.push((1 - smooth(0.001, 0.006, frontGap)) * smooth(0.0, 0.035, z) * (1 - smooth(0.165, 0.19, Math.abs(x))) * (1 - smooth(0.75, 1.2, patchR2))); // 腋下邊界前漸減,避免出現台階
     }
-    regions[key] = { s, c, idx: Int32Array.from(idx), du: Float32Array.from(du), dw: Float32Array.from(dw), wt: Float32Array.from(wt), frame: sideFrame(s) };
+    regions[key] = { s, c, chestAt, idx: Int32Array.from(idx), du: Float32Array.from(du), dw: Float32Array.from(dw), wt: Float32Array.from(wt), wrapWt: Float32Array.from(wrapWt), frame: sideFrame(s) };
   }
   return regions;
 }
@@ -1005,7 +1040,7 @@ function buildAxilla(inst) {
 function buildDye(inst) {
   if (inst.dyePath) { inst.root.remove(inst.dyePath); inst.dyePath.traverse((o) => o.geometry?.dispose()); }
   const f = inst.regions.R.frame.f; const g = geomOf(BASE_STATE.R); const sc = inst.slnC;
-  const at = (du, dw, out) => { const { D, drop } = breastField(du, dw, BASE_STATE.R); return regionBasePoint(inst, 'R', du, dw).addScaledVector(f, D * out).add(new THREE.Vector3(0, -drop * out, 0)); };
+  const at = (du, dw, out) => { const { D, drop } = breastField(du, dw, BASE_STATE.R); return envelopePoint(inst, 'R', regionBasePoint(inst, 'R', du, dw), D * out, drop * out); };
   const group = new THREE.Group(); group.name = 'dyepath';
   const mat = atlasMat('plain', '#3466d8', '#1a2f70', { hatch: 0, transparent: true });
   inst.dyeCurves = [];
@@ -1135,13 +1170,13 @@ function updateGenericFlap(inst, s) {
 }
 function buildFatDrops(inst) {
   const m = inst.fatDrops; const reg = inst.regions.R; const f = reg.frame.f; const p = BASE_STATE.R; const mtx = new THREE.Matrix4();
-  const g = geomOf(p); const q = [g.uN + Q_N.uoq[0] * g.sc, g.wV + Q_N.uoq[1] * g.sc];
+  const g = geomOf(p); const q = [g.uN + Q_N.uoq[0] * g.sc, g.wN + Q_N.uoq[1] * g.sc];
   m.count = m.userData.total || m.count;
   for (let i = 0; i < m.count; i++) {
     const a = hash1(i * 3.1) * Math.PI * 2, rr = Math.sqrt(hash1(i * 7.7)) * 0.03;
     const u = q[0] + rr * Math.cos(a), w = q[1] + rr * Math.sin(a);
     const { D, drop } = breastField(u, w, p); const fr = 0.25 + 0.6 * hash1(i * 13.3);
-    const pt = basePointInterp(inst, 'R', u, w).addScaledVector(f, Math.max(D, 0.004) * fr).add(new THREE.Vector3(0, -drop * fr, 0));
+    const pt = envelopePoint(inst, 'R', basePointInterp(inst, 'R', u, w), Math.max(D, 0.004) * fr, drop * fr);
     const r = 0.0014 + 0.0012 * hash1(i * 5.1);
     mtx.makeScale(r, r, r).setPosition(pt); m.setMatrixAt(i, mtx);
   }
@@ -1163,7 +1198,7 @@ function basePointInterp(inst, key, u, w, arr) {
 }
 function buildGlandDetail(inst) {
   const p = BASE_STATE.R; const f = inst.regions.R.frame.f;
-  const P = (u, w, frac) => { const { D, drop } = breastField(u, w, p); return basePointInterp(inst, 'R', u, w).addScaledVector(f, Math.max(D, 0.002) * frac).add(new THREE.Vector3(0, -drop * frac, 0)); };
+  const P = (u, w, frac) => { const { D, drop } = breastField(u, w, p); return envelopePoint(inst, 'R', basePointInterp(inst, 'R', u, w), Math.max(D, 0.002) * frac, drop * frac); };
   const group = new THREE.Group(); group.name = 'glandDetail';
   const mats = {
     duct: atlasMat('plain', '#f2e3c4', '#a88a5c', { hatch: 0 }), sinus: atlasMat('plain', '#f2e3c4', '#a88a5c', { hatch: 0 }),
@@ -1254,8 +1289,8 @@ function computeTargets(inst) {
   const f = inst.regions.R.frame.f; const g = geomOf(BASE_STATE.R);
   inst.q = {};
   for (const [k, [a, b]] of Object.entries(Q_N)) {
-    const u = g.uN + a * g.sc, w = g.wV + b * g.sc; const { drop } = breastField(u, w, BASE_STATE.R);
-    inst.q[k] = regionBasePoint(inst, 'R', u, w).addScaledVector(f, 0.016).add(new THREE.Vector3(0, -drop * 0.8, 0));
+    const u = g.uN + a * g.sc, w = g.wN + b * g.sc; const { drop } = breastField(u, w, BASE_STATE.R);
+    inst.q[k] = envelopePoint(inst, 'R', regionBasePoint(inst, 'R', u, w), 0.016, drop * 0.8);
   }
   const mound = regionBasePoint(inst, 'R', g.uN, g.wN - 0.01);
   inst.mound = mound.clone().addScaledVector(f, 0.022);
@@ -1388,7 +1423,7 @@ function updateBreasts(inst, s) {
   inst.key.breast = k;
   const geom = inst.skin.geometry; const arr = geom.attributes.position.array; const base = inst.skin.userData.base;
   arr.set(base);
-  inst.nipple = {}; inst.geo = {}; inst.meas = {};
+  inst.nipple = {}; inst.geo = {}; inst.meas = {}; inst.envelopeMode = {}; const breastParams = {};
   for (const key of ['R', 'L']) {
     const reg = inst.regions[key]; const f = reg.frame.f;
     let p = s[key]; const pose = poses[key];
@@ -1397,7 +1432,8 @@ function updateBreasts(inst, s) {
     const thin = pose && key === 'R' && s.imp.kind && p.gland === false && p.fat === false;
     const fit = p.fit || thin;
     if (pose && !s.aug.noWrap) { const g0 = geomOf(p); if (fit || g0.P < pose.need) p = { ...p, Pabs: fit ? Math.max(pose.need, 0.004) : Math.max(g0.P, pose.need) }; }
-    const g = geomOf(p); p = { ...p, g }; inst.geo[key] = g;
+    p = { ...p, implantEnvelope: !!(pose && !(s.aug.noWrap && !thin)) };
+    const g = geomOf(p); p = { ...p, g }; inst.geo[key] = g; breastParams[key] = p; inst.envelopeMode[key] = p.implantEnvelope;
     // 假體處:皮膚至少在假體表面外 cover 的距離(逐點包覆,避免假體或胸大肌穿出皮膚)
     let wrap = null;
     if (pose && !(s.aug.noWrap && !thin)) {
@@ -1414,13 +1450,16 @@ function updateBreasts(inst, s) {
     const [nu, nw] = [g.nU + (p.nsu || 0), g.nW + (p.nsw || 0)];
     let maxD = -1, maxI = -1; let top = -1e9, low = 1e9;
     for (let j = 0; j < reg.idx.length; j++) {
-      const i = reg.idx[j]; let { D, drop } = breastField(reg.du[j], reg.dw[j], p); const wk = reg.wt[j]; D *= wk; drop *= wk;
-      if (thin) { D = wrap(i) * wk + nipBump(reg.du[j], reg.dw[j], p, g) * smooth(0.002, 0.01, wrap(i)); drop = 0; }
+      const i = reg.idx[j]; const wk = p.implantEnvelope ? reg.wrapWt[j] : reg.wt[j]; if (p.implantEnvelope && wk <= 0) continue;
+      let { D, drop } = breastField(reg.du[j], reg.dw[j], p); D *= wk; drop *= wk;
+      if (thin) { D = wrap(i) * wk + nipBump(reg.du[j], reg.dw[j], p, g) * smooth(.002, .01, wrap(i)); drop = 0; }
       else if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D - 0.012) D = smax(D, need, 0.012) + (need > D ? nipBump(reg.du[j], reg.dw[j], p, g) : 0); }
       // 鼓出只作用在朝前的胸壁(側胸壁的頂點和前方共用同一組平面座標,推了會摺疊)
       const fz = smooth(0.06, 0.1, base[i * 3 + 2]);
-      const [bu, bw] = thin ? [0, 0] : bulgeOf(reg.du[j], reg.dw[j], D, g).map((v) => v * fz);
-      arr[i * 3] += f.x * D + reg.s * bu; arr[i * 3 + 1] += f.y * D - drop + bw; arr[i * 3 + 2] += f.z * D;
+      const [bu, bw] = thin ? [0, 0] : bulgeOf(reg.du[j], reg.dw[j], D, g, p.implantEnvelope).map((v) => v * fz);
+      const dx = f.x * D + reg.s * bu, dy = f.y * D - drop + bw;
+      const dz = thin || wrap ? 0 : chestShift(reg, base[i * 3], base[i * 3 + 1], base[i * 3 + 2], dx, dy);
+      arr[i * 3] += dx; arr[i * 3 + 1] += dy; arr[i * 3 + 2] += f.z * D + dz;
       const dn = (reg.du[j] - nu) ** 2 + (reg.dw[j] - nw) ** 2;
       if (D > 0.01 && dn < 0.0004 && D - dn * 20 > maxD) { maxD = D - dn * 20; maxI = i; }
       if (Math.abs(reg.du[j] - nu) < 0.012 && g.P > 0.01) { const y = arr[i * 3 + 1]; if (D > 0.33 * g.P && y > top) top = y; if (D > 0.05 * g.P && y < low) low = y; }
@@ -1431,27 +1470,39 @@ function updateBreasts(inst, s) {
     else if (maxI >= 0) nip = new THREE.Vector3(arr[maxI * 3], arr[maxI * 3 + 1], arr[maxI * 3 + 2]);
     inst.nipple[key] = nip && p.areola ? nip : null;
     // 模型實測:上極(乳房上緣到乳頭)與下極(乳頭到最低點)的垂直比例
-    if (nip && top > low) inst.meas[key] = { up: (top - nip.y) / (top - low), imf: reg.c.y + g.imf - nip.y };
+    if (nip && top > low) inst.meas[key] = { top, low, up: (top - nip.y) / (top - low), imf: reg.c.y + g.imf - nip.y };
     // 脂肪與乳腺殼
     for (const [part, scale, off] of [['fat_', 1, -0.004], ['gland_', 0.72, -0.006]]) {
       const m = inst.byName.get(part + key); const gm = m.geometry; const pa = gm.attributes.position.array; const { src, regionK } = gm.userData;
       for (let v = 0; v < src.length; v++) {
-        const i = src[v], j = regionK[v]; let { D, drop } = breastField(reg.du[j], reg.dw[j], p); D *= reg.wt[j]; drop *= reg.wt[j];
+        const i = src[v], j = regionK[v]; let { D, drop } = breastField(reg.du[j], reg.dw[j], p); const wk = p.implantEnvelope ? reg.wrapWt[j] : reg.wt[j]; D *= wk; drop *= wk;
         if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D) D = need + nipBump(reg.du[j], reg.dw[j], p, g); }
         const d = Math.max(D * scale + off, -0.003);
-        const fz = smooth(0.06, 0.1, base[i * 3 + 2]); const [bu, bw] = bulgeOf(reg.du[j], reg.dw[j], D, g).map((v) => v * fz);
-        pa[v * 3] = base[i * 3] + f.x * d + reg.s * bu * scale; pa[v * 3 + 1] = base[i * 3 + 1] + f.y * d - drop * scale + bw * scale; pa[v * 3 + 2] = base[i * 3 + 2] + f.z * d;
+        const fz = smooth(0.06, 0.1, base[i * 3 + 2]); const [bu, bw] = bulgeOf(reg.du[j], reg.dw[j], D, g, p.implantEnvelope).map((v) => v * fz);
+        const dx = f.x * d + reg.s * bu * scale, dy = f.y * d - drop * scale + bw * scale;
+        const dz = wrap ? 0 : chestShift(reg, base[i * 3], base[i * 3 + 1], base[i * 3 + 2], dx, dy);
+        pa[v * 3] = base[i * 3] + dx; pa[v * 3 + 1] = base[i * 3 + 1] + dy; pa[v * 3 + 2] = base[i * 3 + 2] + f.z * d + dz;
       }
       gm.attributes.position.needsUpdate = true; gm.computeVertexNormals(); gm.computeBoundingSphere();
       m.userData.sideP = g.P;
     }
+  }
+  // Nipple relief is applied along the completed envelope normal. Adding it
+  // along a fixed anterior axis can make a folded ptotic meridian intersect.
+  geom.computeVertexNormals();
+  for (const key of ['R', 'L']) {
+    const reg = inst.regions[key], p = breastParams[key], g = inst.geo[key];
+    applyNippleRelief(geom, reg, p, g);
+    const nip = g.P > 0.004 ? basePointInterp(inst, key, g.nU + (p.nsu || 0), g.nW + (p.nsw || 0), arr) : null;
+    inst.nipple[key] = nip && p.areola ? nip : null;
+    if (nip && inst.meas[key]) { const m = inst.meas[key]; m.imf = reg.c.y + g.imf - nip.y; m.up = (m.top - nip.y) / (m.top - m.low); }
   }
   geom.attributes.position.needsUpdate = true; geom.computeVertexNormals(); geom.computeBoundingSphere(); geom.computeBoundingBox();
   // 皮島:放在乳房中央(原乳頭位置)
   const mu = inst.skin.material.uniforms; const gR = inst.geo.R;
   const nR = regionBasePoint(inst, 'R', gR.uN, gR.wN - 0.004);
   const fr = breastField(gR.uN, gR.wN - 0.004, { ...s.R, g: gR });
-  nR.addScaledVector(inst.regions.R.frame.f, Math.max(fr.D, 0)).add(new THREE.Vector3(0, -fr.drop, 0));
+  envelopePoint(inst, 'R', nR, Math.max(fr.D, 0), fr.drop);
   inst.paddleCenter = nR;
   mu.uPaddle.value.set(nR.x, nR.y, nR.z, mu.uPaddle.value.w);
   return true;
@@ -1603,7 +1654,7 @@ function simTumorPoint(inst, s) {
   if (inst.key.tumorPt === key) return inst.tumorPt;
   const p = { ...s[ta.side], defects: [], defect: 0 };
   const { D, drop } = breastField(ta.u, ta.w, p);
-  const pt = regionBasePoint(inst, ta.side, ta.u, ta.w).addScaledVector(inst.regions[ta.side].frame.f, Math.max(D, 0.008) * ta.depth).add(new THREE.Vector3(0, -drop * ta.depth, 0));
+  const pt = envelopePoint(inst, ta.side, regionBasePoint(inst, ta.side, ta.u, ta.w), Math.max(D, 0.008) * ta.depth, drop * ta.depth);
   inst.key.tumorPt = key; inst.tumorPt = pt; return pt;
 }
 
@@ -1912,7 +1963,11 @@ const PT_GRADE = [
   { zh: '第三度(重度)', target: -0.045, full: 0.3 }
 ];
 // 乳頭相對皺褶的高度(公尺,高於為正);與模型實測值一致(含位移方向的小修正)
-const nipRelIMF = (pt, p = {}) => { const g = geomOf({ P: 0.064, shape: 'natural', ...p, pt }); return g.nW - g.dropA - g.imf - 0.05 * g.P; }; // 乳頭處的組織下垂量約等於 dropA
+const nipRelIMF = (pt, p = {}) => {
+  const params = { P: 0.064, shape: 'natural', areola: true, ...p, pt };
+  const g = geomOf(params); const f = breastField(g.nU, g.nW, { ...params, g });
+  return g.nW - f.drop + sideFrame(1).f.y * f.D - g.imf;
+};
 function ptForGrade(gr, p = {}) {
   const t = PT_GRADE[gr].target; if (nipRelIMF(0, p) <= t) return 0;
   let lo = 0, hi = 3; for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (nipRelIMF(m, p) > t) lo = m; else hi = m; }
@@ -1955,7 +2010,7 @@ function renderMeas() {
   const m = instances[0]?.meas; const v = m?.L || m?.R; if (!v) { $('pfMeas').textContent = ''; return; }
   const up = Math.round(v.up * 100); const d = -v.imf * 100; // 乳頭高於下皺褶為正
   const grade = d > 1 ? '無下垂' : d >= -1 ? '第一度下垂' : d >= -3 ? '第二度下垂' : '第三度下垂';
-  $('pfMeas').textContent = `模型目前:上極 ${up}%・下極 ${100 - up}%;乳頭${Math.abs(d) <= 1 ? '約在乳房下皺褶高度' : d > 0 ? `高於乳房下皺褶 ${d.toFixed(1)} cm` : `低於乳房下皺褶 ${(-d).toFixed(1)} cm`}(約${grade},Regnault 分級)。估計單側乳房體積約 ${Math.round(estVolume() / 10) * 10} mL。`;
+  $('pfMeas').textContent = `模型目前:上極 ${up}%・下極 ${100 - up}%;乳頭${Math.abs(d) <= 1 ? '約在乳房下皺褶高度' : d > 0 ? `高於乳房下皺褶 ${d.toFixed(1)} cm` : `低於乳房下皺褶 ${(-d).toFixed(1)} cm`}(約${grade},Regnault 分級)。包絡積分粗估(非臨床量測)單側約 ${Math.round(estVolume() / 10) * 10} mL。`;
 }
 function profileChanged() {
   PROFILE.ver++; GEO.clear();
@@ -2023,13 +2078,19 @@ function shapeFor(r, view, incLevel) {
   return sh;
 }
 
+function incisionFoldOffset(g, side) {
+  const field = breastField(g.nU, g.nW, { ...BASE_STATE[side], g });
+  const nippleY = g.nW - field.drop + sideFrame(SIDES[side]).f.y * field.D;
+  return g.imf - nippleY + 0.004;
+}
+
 function simState(r) {
   const s = structuredClone(BASE_STATE);
   const side = sim.side, other = side === 'L' ? 'R' : 'L', sg = SIDES[side];
   const incLevel = INCISIONS[sim.inc]?.level || 1;
   const sh = shapeFor(r, sim.view, incLevel);
   const gPre = geomOf({ P: 0.064, shape: 'natural' });
-  const u = gPre.uN + sg * r.X, w = gPre.wV + r.Y; const len = Math.hypot(r.X, r.Y) || 1;
+  const u = gPre.nU + sg * r.X, w = gPre.nW + r.Y; const len = Math.hypot(r.X, r.Y) || 1;
   const sigma = Math.max((r.exR / 100) * 1.05, 0.012);
   const mk = (shp, sgn, withTumor) => ({
     P: shp.P / r.sc, shape: 'natural', areola: true, defect: 0, dq: 'uoq', gland: true, fat: true, sc: shp.sc / r.sc, lift: shp.lift, ptosis: shp.ptosis,
@@ -2040,7 +2101,7 @@ function simState(r) {
   s[other] = mk(sh.other || { sc: r.sc, P: 0.064 * r.sc, lift: 0, ptosis: 1, dent: 0, shift: 0 }, SIDES[other], false);
   s.tumorAt = { side, u, w, depth: 0.5, tr: sim.sizeCm / 200, er: r.exR / 100 };
   const scarId = sim.view === 'post' && incLevel !== 1 ? r.l1[0] : sim.inc;
-  const Yf = gPre.bot - gPre.wN + gPre.dropA + 0.004;
+  const Yf = incisionFoldOffset(gPre, side);
   s.custom = incisionPaths(scarId, { ...r, Yf }).filter((p) => sim.view === 'pre' || !p.design).map((p) => ({ side, pts: p.pts.map(([x, y]) => [+x.toFixed(4), +y.toFixed(4)]), closed: !!p.closed, dashed: sim.view === 'pre' }));
   if (sim.view === 'pre') { s.ghostSkin = 0.82; s.xray = true; s.tumor = 1; s.margin = 1; }
   else { s.cut = 1; }
@@ -2061,7 +2122,7 @@ function renderClock(r) {
   kids.push(mk('circle', { class: 'are', r: 17 }), mk('circle', { class: 'are', r: 4 }));
   const scarId = sim.view === 'post' && INCISIONS[sim.inc].level !== 1 ? r.l1[0] : sim.inc;
   const gC = geomOf({ P: 0.064, shape: 'natural' });
-  for (const p of incisionPaths(scarId, { ...r, Yf: gC.bot - gC.wN + gC.dropA + 0.004 })) {
+  for (const p of incisionPaths(scarId, { ...r, Yf: incisionFoldOffset(gC, sim.side) })) {
     if (p.design && sim.view !== 'pre') continue;
     const d = p.pts.map(([x, y], i) => `${i ? 'L' : 'M'}${(x * 1000).toFixed(1)} ${(-y * 1000).toFixed(1)}`).join(' ') + (p.closed ? 'Z' : '');
     kids.push(mk('path', { class: 'inc', d, 'stroke-dasharray': sim.view === 'pre' || p.design ? '5 4' : 'none' }));
