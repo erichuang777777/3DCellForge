@@ -176,12 +176,12 @@ void main(){
     // 光源:暖色主光、冷色補光、背後輪廓光;漫射用依波長不同的包覆量模擬皮下散射(陰影交界偏紅)
     vec3 Lk = L, Lf = L2, Lr = normalize((vec4(0.1, 0.3, -0.95, 0.0) * viewMatrix).xyz);
     float nl = dot(Nm, Lk);
-    vec3 wrapW = vec3(0.55, 0.32, 0.25);
+    vec3 wrapW = vec3(0.46, 0.33, 0.28);
     vec3 dif = clamp((vec3(nl) + wrapW) / (1.0 + wrapW), 0.0, 1.0); dif *= dif;
     vec3 col2 = alb * dif * vec3(1.0, 0.94, 0.86) * 1.9;
     col2 += alb * clamp((dot(Nm, Lf) + 0.3) / 1.3, 0.0, 1.0) * vec3(0.75, 0.82, 0.95) * 0.32;
     float hemi = 0.5 + 0.5 * Nm.y;
-    col2 += alb * mix(vec3(0.3, 0.22, 0.19), vec3(0.42, 0.45, 0.5), hemi) * 0.34;
+    col2 += alb * mix(vec3(0.34, 0.29, 0.27), vec3(0.42, 0.45, 0.5), hemi) * 0.38; // 下方環境光較中性,避免下皺褶陰影染成紅褐色帶
     float NV = clamp(dot(Nm, V), 0.0, 1.0);
     col2 += vec3(1.0, 0.45, 0.32) * alb * pow(1.0 - NV, 3.0) * clamp(dot(N, Lr) + 0.5, 0.0, 1.0) * 0.5;
     // 雙層高光(皮脂光澤 + 寬高光),Schlick Fresnel
