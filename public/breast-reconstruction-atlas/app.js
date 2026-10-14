@@ -455,9 +455,9 @@ function profile(du, dw, g) {
   const dy = t > 1e-6 ? y / t : 0;
   const lo = smooth(0, 0.9, -dy), up = smooth(0, 0.9, dy);
   const sag = Math.min(g.pt, 1), full = clampN(g.full, 0, 1);
-  const mSide = g.round ? 3.0 : 2.6;
-  const mLo = g.round ? 2.4 : 2.0 + 0.6 * sag;
-  const mUp = g.round ? 2.4 : 1.2 + 1.0 * full; // 上極:從第二肋緩慢、近直線升到乳頭;飽滿度高時略外凸
+  const mSide = g.round ? 3.2 : 3.0;
+  const mLo = g.round ? 2.8 : 2.6 + 0.4 * sag;
+  const mUp = g.round ? 2.6 : 1.4 + 1.2 * full; // 上極:從第二肋緩慢、近直線升到乳頭;飽滿度高時略外凸
   const bSide = 1.3, bLo = g.round ? 0.95 : 1.0 - 0.1 * sag, bUp = 1.6;
   const m = mSide + (mLo - mSide) * lo + (mUp - mSide) * up;
   const b = bSide + (bLo - bSide) * lo + (bUp - bSide) * up;
