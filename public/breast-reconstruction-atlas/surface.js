@@ -8,7 +8,11 @@ export function surfaceShape(u, w, g) {
   const du = u - g.uN, dw = w - g.wN;
   const x = du / radius(du, g.Rmed, g.Rlat, g.sc);
   const y = dw / radius(dw, g.Rlo, g.Rup, g.sc);
-  const r2 = x * x + y * y;
+  // 內下象限用超橢圓(較方),讓乳房內下方與胸骨前的組織連成一片,而不是被橢圓切掉;其餘方向維持橢圓
+  const rr = Math.hypot(x, y);
+  const inferomedial = g.round || rr < 1e-6 ? 0 : smooth(0, 0.6, -x / rr) * smooth(0, 0.6, -y / rr);
+  const pe = 2 + 2.6 * inferomedial;
+  const r2 = Math.pow(Math.pow(Math.abs(x), pe) + Math.pow(Math.abs(y), pe), 2 / pe);
   if (r2 >= 1) return { D: 0, drop: 0 };
   const q = 1 - r2;
   if (g.shape === 'flat' || g.P < 0.0005) return { D: 0.0015 * q * q, drop: 0 };
@@ -17,7 +21,10 @@ export function surfaceShape(u, w, g) {
   // old direction-dependent derivatives around the nipple. b > 1 gives a C1
   // chest-wall attachment. The radial polynomial fills the mid-pole without a
   // plateau, cone, or artificial ridge at the apex.
-  const b = g.round ? 1.5 : 2.1 - 0.65 * clamp(g.full, 0, 1);
+  const b0 = g.round ? 1.5 : 2.1 - 0.65 * clamp(g.full, 0, 1);
+  // 內側(乳溝側)較飽滿:統計平均乳房的內側組織一路延伸到胸骨旁,乳溝淺;指數仍 > 1,維持與胸壁相切
+  const r = Math.sqrt(r2), medial = r > 1e-6 ? smooth(0, 0.9, -x / r) : 0;
+  const b = Math.max(1.25, b0 - (g.round ? 0.1 : 0.35) * medial); // b ≥ 1.25:深度沿每條經線單調遞減
   const D = g.P * Math.pow(q, b) * (1 + 1.2 * r2);
 
   // A smooth lower ring moves down then returns to the fixed IMF. Unlike a

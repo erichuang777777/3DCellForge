@@ -415,7 +415,9 @@ function geomOf(p) {
   const xN = M.nn / 200; const uN = xN - C_X;
   const yV = NOTCH_Y - Math.sqrt(Math.max((M.snn / 100) ** 2 - xN ** 2, 0.0025));
   // 內側到乳溝(由乳房內緣距離決定);外側到腋前線,約基底寬度的一半(對照臨床照片校正,原本外側太窄)
-  const Rmed = clampN(xN - M.imd / 200, 0.04, W * 0.75); const Rlat = clampN(W * 0.52, 0.05, 0.165 - xN);
+  // 內側可延伸到胸骨旁(統計平均形狀的乳溝很淺)
+  // 乳房內緣距離是看得到組織開始的位置;包絡尾端再往內延伸約 3 cm,兩側在胸骨前重疊,乳溝才會淺(統計平均形狀)
+  const Rmed = clampN(xN - M.imd / 200 + 0.029, 0.04, W * 1.05); const Rlat = clampN(W * 0.52, 0.05, 0.165 - xN);
   // 上緣:乳房從第二肋(鎖骨下約 5–6 cm)開始,依解剖位置固定,不再只是乳頭往上一個比例;下緣依比例
   const H = W * 0.95; const Rlo = (1 - ratio) * H;
   const Rup = clampN(NOTCH_Y - 0.058 - C_Y - (yV - C_Y + lift), 0.05, 0.14) * (0.85 + 0.3 * ratio);
