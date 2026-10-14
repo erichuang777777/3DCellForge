@@ -181,7 +181,10 @@ void main(){
     vec3 col2 = alb * dif * vec3(1.0, 0.94, 0.86) * 1.9;
     col2 += alb * clamp((dot(Nm, Lf) + 0.3) / 1.3, 0.0, 1.0) * vec3(0.75, 0.82, 0.95) * 0.32;
     float hemi = 0.5 + 0.5 * Nm.y;
-    col2 += alb * mix(vec3(0.34, 0.29, 0.27), vec3(0.42, 0.45, 0.5), hemi) * 0.38; // 下方環境光較中性,避免下皺褶陰影染成紅褐色帶
+    col2 += alb * mix(vec3(0.34, 0.29, 0.27), vec3(0.42, 0.45, 0.5), hemi) * 0.38;
+    col2 += vec3(0.05, 0.045, 0.042) * (1.0 - hemi); // 地面反光:朝下的皮膚(乳房下緣)不會只剩飽和的紅褐色
+    float shd = 1.0 - smoothstep(-0.25, 0.35, nl); // 背光區略去飽和,接近真實照片的中性陰影
+    col2 = mix(col2, vec3(dot(col2, vec3(0.3, 0.59, 0.11))) * vec3(1.12, 0.97, 0.88), 0.3 * shd);
     float NV = clamp(dot(Nm, V), 0.0, 1.0);
     col2 += vec3(1.0, 0.45, 0.32) * alb * pow(1.0 - NV, 3.0) * clamp(dot(N, Lr) + 0.5, 0.0, 1.0) * 0.5;
     // 雙層高光(皮脂光澤 + 寬高光),Schlick Fresnel
