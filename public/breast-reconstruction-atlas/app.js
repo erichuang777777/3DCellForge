@@ -450,18 +450,18 @@ function profile(du, dw, g) {
   const t2 = x * x + y * y; if (t2 >= 1) return 0;
   if (g.shape === 'flat' || g.P < 0.0005) return 0.0015 * (1 - t2);
   const t = Math.sqrt(t2);
-  const down = y < 0 && t > 1e-6 ? Math.pow(-y / t, 1.5) : 0;
-  // 寬圓的穹頂(超橢圓):中央平緩、邊緣才收;下緣較陡,形成乳房下皺褶
-  // 圓形(假體):寬而飽滿的穹頂、上極外凸;邊緣以圓角收進胸壁,避免一圈摺痕
-  // 自然乳房:越挺(下垂越少)下極越緊實渾圓,下垂時下極才變得飽滿下沉
-  const sag = Math.min(g.pt, 1);
-  // 上緣與內外側以圓角平順接到胸壁,只有下緣(乳房下皺褶)保留清楚的摺
-  const fillet = 1 - (1 - smooth(1.0, 0.72, t)) * 0.5 * (1 - down);
-  const dome = g.round ? Math.pow(1 - Math.pow(t, 2.4), 0.58) * (0.55 + 0.45 * smooth(1.0, 0.8, t)) : Math.pow(1 - Math.pow(t, 2.2 + 0.8 * sag), 0.62 - 0.12 * sag - 0.08 * down) * fillet;
-  if (y <= 0 || g.round) return g.P * dome;
-  const cone = Math.pow(1 - t, g.aU) * fillet;
-  const upper = dome + (cone - dome) * smooth(0.25, 0.85, t);
-  return g.P * (dome + (upper - dome) * Math.pow(y / t, 0.7));
+  // 單一連續曲面 D = P·(1 − t^m)^b,m、b 隨方向平滑變化(不再由圓頂、斜坡、圓角拼接,避免稜線與折角):
+  //  m:中段飽滿程度(越大越圓);b:接到胸壁的方式(b > 1 相切平順,b ≈ 1 形成有角度的乳房下皺褶)
+  const dy = t > 1e-6 ? y / t : 0;
+  const lo = smooth(0, 0.9, -dy), up = smooth(0, 0.9, dy);
+  const sag = Math.min(g.pt, 1), full = clampN(g.full, 0, 1);
+  const mSide = g.round ? 3.0 : 2.6;
+  const mLo = g.round ? 2.4 : 2.0 + 0.6 * sag;
+  const mUp = g.round ? 2.4 : 1.2 + 1.0 * full; // 上極:從第二肋緩慢、近直線升到乳頭;飽滿度高時略外凸
+  const bSide = 1.3, bLo = g.round ? 0.95 : 1.0 - 0.1 * sag, bUp = 1.6;
+  const m = mSide + (mLo - mSide) * lo + (mUp - mSide) * up;
+  const b = bSide + (bLo - bSide) * lo + (bUp - bSide) * up;
+  return g.P * Math.pow(1 - Math.pow(t, m), b);
 }
 function breastField(du, dw, p) {
   const g = p.g || geomOf(p);
@@ -500,8 +500,9 @@ function bulgeOf(du, dw, D, g) {
   const ux = u / r, wy = w / r;
   // 四周都往外鼓(下方最多、外側次之、內側再次、上方最少),最大鼓出落在基底與乳頭之間偏外圈處,
   // 鼓出量大於該處到基底邊緣的距離,所以中段會超出基底(側面與仰視都看得到「下緣內收」)
-  const dirW = 0.3 + 0.3 * Math.max(0, -wy) + 0.25 * Math.max(0, ux) + 0.15 * Math.max(0, -ux) - 0.15 * Math.max(0, wy);
-  const ring = smooth(0.1, 0.5, t) * (1 - smooth(0.6, 1.0, t)); // 鼓出在中段最大,接近基底時平順收回,下緣形成柔和的皺褶而非硬摺
+  // 只往左右溫和加寬;不往下推(往下推會把下極擠到基底邊緣,形成圓盤般的直壁)
+  const dirW = 0.15 * Math.abs(ux) * (1 - Math.abs(wy));
+  const ring = smooth(0.1, 0.45, t) * (1 - smooth(0.45, 1.0, t)); // 鼓出在中段最大,接近基底時平順收回,下緣形成柔和的皺褶而非硬摺
   const b = Math.min(0.75 * D * ring * dirW * Math.min(g.P / 0.04, 1.15) * (1 - 0.3 * smooth(0.06, 0.085, g.P)), 0.009); // 上限約 9 mm:只是下緣微微內收,不讓下極往下凸出變形
   return [ux * b, wy * b];
 }
