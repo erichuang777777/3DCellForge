@@ -1,5 +1,6 @@
 // Educational shape envelope, in metres. This is not a patient-specific fit or
 // an outcome predictor. Shape, gravity and nipple detail are separate channels.
+import { MH_FIELD as MF, MH_DATA } from './breast-field.js';
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const radius = (v, a, b, scale) => a + (b - a) * smooth(-0.025 * scale, 0.025 * scale, v);
@@ -60,4 +61,95 @@ export function implantEnvelopeShape(du, dw, g) {
   const downness = y < 0 && r > 1e-6 ? -y / r : 0;
   const drop = (g.dropA || 0) * Math.max((D / g.P) ** .85, .55 * smooth(1, .7, r)) * (1 + .2 * clamp(-y, 0, 1) * (.5 + .5 * downness));
   return { D, drop };
+}
+
+// ---- 自然乳房:MakeHuman(CC0)雕塑形狀的罩杯 × 緊實度位移場 ----
+// 體表皮膚本身是 MakeHuman 基底網格(最小罩杯)放大 1.139 倍對齊而來(tools/breast-atlas/female_skin/fit.py),
+// 位移場也以最小罩杯為胸壁,因此同一個比例可直接套用。
+export const MH_SCALE = 1.139;
+export const MH_Y_OFFSET = 1.41 - 0.425 * MH_SCALE; // 胸骨上切跡對齊(MakeHuman y 0.425 → 模型 1.41)
+export const MH_NIP = { x: MF.nipX, y: MF.nipY }; // 平均罩杯乳頭的胸壁位置(MakeHuman 座標)
+const FRAME_F = (() => { const l = Math.hypot(0.25, -0.05, 1); return [0.25 / l, -0.05 / l, 1 / l]; })();
+let GRID = null;
+function grid() {
+  if (GRID) return GRID;
+  const bin = atob(MH_DATA); const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  GRID = new Int16Array(u8.buffer); return GRID;
+}
+const VOL = (ci, fi) => MF.meta[`${ci ? 'max' : 'average'}cup_${['max', 'average', 'min'][fi]}firmness`].vol_mL;
+const PMAX = (ci, fi) => MF.meta[`${ci ? 'max' : 'average'}cup_${['max', 'average', 'min'][fi]}firmness`].Pmax;
+
+// 罩杯 c:0 = 最小罩杯(平)、0.5 = 平均、1 = 最大;緊實度 p:0 = 緊實、0.5 = 平均、1 = 鬆(MakeHuman 範圍),> 1 依同方向外插
+// 各節點之間分段雙線性(與 MakeHuman 調整滑桿的混合方式相同),下垂量因此隨罩杯放大而不是固定量
+export function fieldWeights(c, p) {
+  c = clamp(c, 0, 1); p = clamp(p, 0, 2);
+  const cw = c <= 0.5 ? [[0, c / 0.5]] : [[0, 1 - (c - 0.5) / 0.5], [1, (c - 0.5) / 0.5]];
+  let pw;
+  if (p <= 0.5) pw = [[0, 1 - p / 0.5], [1, p / 0.5]];
+  else if (p <= 1) pw = [[1, 1 - (p - 0.5) / 0.5], [2, (p - 0.5) / 0.5]];
+  else { const e = (p - 1) / 0.5; pw = [[1, -e], [2, 1 + e]]; }
+  const out = [];
+  for (const [ci, a] of cw) for (const [fi, b] of pw) if (Math.abs(a * b) > 1e-9) out.push([ci * 3 + fi, a * b, ci, fi]);
+  return out;
+}
+// 單側體積(mL,MakeHuman 原尺寸;模型尺寸要乘 MH_SCALE³)
+export function fieldVolume(c, p) { let v = 0; for (const [, w, ci, fi] of fieldWeights(c, p)) v += w * VOL(ci, fi); return Math.max(v, 0); }
+export function fieldPmax(c, p) { let v = 0; for (const [, w, ci, fi] of fieldWeights(c, p)) v += w * PMAX(ci, fi); return Math.max(v, 0); }
+// 由目標體積(MakeHuman 尺寸)反推罩杯位置;超過最大罩杯時回傳放大倍數
+export function cupForVolume(vol, p) {
+  const va = fieldVolume(0.5, p), vm = fieldVolume(1, p);
+  if (vol <= va) return { c: 0.5 * Math.max(vol, 0) / va, amp: 1 };
+  if (vol <= vm) return { c: 0.5 + 0.5 * (vol - va) / (vm - va), amp: 1 };
+  return { c: 1, amp: Math.cbrt(vol / vm) };
+}
+// Catmull-Rom 雙三次取樣(C1,網格線上不會出現法線折痕);xm、ym 為 MakeHuman 座標(公尺)
+const cr = (t) => { const t2 = t * t, t3 = t2 * t; return [(-t3 + 2 * t2 - t) / 2, (3 * t3 - 5 * t2 + 2) / 2, (-3 * t3 + 4 * t2 + t) / 2, (t3 - t2) / 2]; };
+export function sampleField(xm, ym, wts, out = [0, 0, 0]) {
+  out[0] = out[1] = out[2] = 0;
+  const fx = (xm - MF.x0) / MF.step, fy = (ym - MF.y0) / MF.step;
+  if (!(fx >= 0 && fy >= 0 && fx <= MF.nx - 1 && fy <= MF.ny - 1)) return out;
+  const G = grid(); const i = Math.min(Math.floor(fx), MF.nx - 2), j = Math.min(Math.floor(fy), MF.ny - 2);
+  const wx = cr(fx - i), wy = cr(fy - j); const plane = MF.nx * MF.ny;
+  for (let b = 0; b < 4; b++) {
+    const jj = clamp(j - 1 + b, 0, MF.ny - 1);
+    for (let a = 0; a < 4; a++) {
+      const ii = clamp(i - 1 + a, 0, MF.nx - 1); const k = wx[a] * wy[b]; if (k === 0) continue;
+      const cell = jj * MF.nx + ii;
+      for (const [n, w] of wts) { const o = n * 3 * plane + cell; const kw = k * w * MF.scale; out[0] += kw * G[o]; out[1] += kw * G[o + plane]; out[2] += kw * G[o + 2 * plane]; }
+    }
+  }
+  return out;
+}
+// 模型的胸前平面座標(du 往外側為正、dw 往上為正,相對乳房區域中心)→ 位移
+// g.field = { w: 權重, cx: 區域中心離中線距離, kx: 橫向比例, k: 縱向與位移比例, amp: 超出最大罩杯的放大倍數 }
+const TMP = [0, 0, 0];
+export function fieldShape(du, dw, g) {
+  const F = g.field;
+  const s = sampleField((du + F.cx) / F.kx, MF.nipY + (dw - g.wN) / F.k, F.w, TMP);
+  const a = F.k * F.amp; const D = s[0] * a;
+  let drop = s[2] * a;
+  // 臨床下垂(重力):組織沿胸壁往下滑。有組織處滑最多,乳房下皺褶與上緣附著處歸零(邊界沿雕塑形狀本身的 U 形輪廓,
+  // 不是一條水平線);上極皮膚因此被拉長變平,下極越過皺褶往下垂
+  if (F.S > 0) drop += F.S * smooth(0.002, 0.016, D) * (dw <= g.wN ? 1 : 1 - 0.85 * smooth(g.wN, F.top, dw));
+  return { D, lat: s[1] * a, drop };
+}
+// 由位移場量出外形:看得到的乳房下皺褶(沿乳頭經線,皮膚離開胸壁、或往下翻折的位置)、上緣、內外緣
+export function fieldMetrics(g) {
+  const F = g.field, h = 0.002;
+  const at = (du, dw) => fieldShape(du, dw, g);
+  const vis = (dw) => { const v = at(g.uN, dw); return { y: dw - v.drop + FRAME_F[1] * v.D, D: v.D, drop: v.drop }; };
+  let crease = null; let prev = vis(g.wN - 0.24), cur = vis(g.wN - 0.24 + h);
+  for (let dw = g.wN - 0.24 + 2 * h; dw < g.wN; dw += h) {
+    const nxt = vis(dw);
+    if (cur.D > 0.002 || (cur.y > prev.y && cur.y >= nxt.y && cur.drop > 0.003)) { crease = { y: cur.y, foot: dw - h }; break; }
+    prev = cur; cur = nxt;
+  }
+  if (!crease) crease = { y: g.wN - 0.05, foot: g.wN - 0.05 };
+  let top = g.wN; for (let dw = g.wN; dw < g.wN + 0.22; dw += h) if (at(g.uN, dw).D > 0.003) top = dw;
+  let med = g.uN, lat = g.uN;
+  for (let du = g.uN; du > g.uN - 0.16; du -= h) if (at(du, g.wN).D > 0.003) med = du;
+  for (let du = g.uN; du < g.uN + 0.16; du += h) if (at(du, g.wN).D > 0.003) lat = du;
+  const n = at(g.uN, g.wN);
+  return { imf: crease.y, imfFoot: crease.foot, top, med, lat, nipD: n.D, nipDrop: n.drop, nipLat: n.lat };
 }
