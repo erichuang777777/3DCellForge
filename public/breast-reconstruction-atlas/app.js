@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { surfaceShape, implantEnvelopeShape, fieldShape, fieldMetrics, fieldWeights, fieldVolume, fieldPmax, cupForVolume, MH_SCALE, MH_Y_OFFSET, MH_NIP } from './surface.js';
+import { surfaceShape, implantEnvelopeShape, fieldShape, fieldMetrics, fieldWeights, fieldVolume, fieldPmax, cupForVolume, unwrapX, frontZ, MH_NIP } from './surface.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SCENARIOS as BASE_SCENARIOS, END_STATES as BASE_END, COMPARE_DEFAULT, INFO, LAYER_NAMES, PERF_MAP } from './content.js';
@@ -450,27 +450,27 @@ function cupVolume(d) {
 // 自然乳房:用 MakeHuman 雕塑形狀的罩杯 × 緊實度位移場取代公式包絡。
 // 罩杯 → 目標體積 → 罩杯軸位置;下垂程度 pt(0–3)→ 緊實度軸 0–1.5(1 以上為外插)。兩軸交互作用:同樣鬆弛,大罩杯下垂得多
 function naturalField(g, p, M, sc, lift) {
-  const k = MH_SCALE, f = sideFrame(1).f;
+  const f = sideFrame(1).f;
   const pp = clampN(g.pt * 0.5, 0, 1); // 組織緊實度(MakeHuman 範圍內,不外插)
   const vol = cupVolume(M.d) * Math.pow((p.P ?? 0.064) / 0.064, 1.5) * sc ** 3;
-  const { c, amp } = cupForVolume(vol / k ** 3, pp);
-  const field = { w: fieldWeights(c, pp), cx: C_X, kx: k, k, amp };
+  const { c, amp } = cupForVolume(vol, pp);
+  const field = { w: fieldWeights(c, pp), cx: C_X, cy: C_Y, du0: 0, dy0: lift, amp };
   // 乳頭基底:罩杯快選用雕塑模型原本的位置(乳頭隨罩杯與下垂自然移動);量測模式讓看得到的乳頭落在量測位置
-  let xF = MH_NIP.x * k, yF = MH_NIP.y * k + MH_Y_OFFSET;
-  const t = { field, uN: xF - C_X, wN: yF - C_Y + lift };
+  const t = { field, uN: MH_NIP.x - C_X, wN: MH_NIP.y - C_Y + lift };
   if (PROFILE.mode === 'meas') {
     const n = fieldShape(t.uN, t.wN, t);
     const xV = M.nn / 200, yV = NOTCH_Y - Math.sqrt(Math.max((M.snn / 100) ** 2 - xV ** 2, 0.0025));
-    xF = xV - (f.x * n.D + n.lat); yF = yV - (f.y * n.D - n.drop);
-    field.kx = k * xF / (MH_NIP.x * k); t.uN = xF - C_X; t.wN = yF - C_Y + lift;
+    const xF = xV - (f.x * n.D + n.lat), yF = yV - (f.y * n.D - n.drop);
+    field.du0 = unwrapX(xF, frontZ(xF)) - unwrapX(MH_NIP.x, frontZ(MH_NIP.x)); field.dy0 = yF - MH_NIP.y + lift;
+    t.uN = xF - C_X; t.wN = yF - C_Y + lift;
   }
   // 重力下垂量:鬆弛程度 × 重量(同樣鬆弛,越重的乳房垂得越多;非線性)
   const m0 = fieldMetrics(t); field.top = m0.top;
   field.S = 0.095 * Math.pow(clampN(g.pt / 3, 0, 1), 1.3) * clampN(Math.pow(vol / 430, 0.3), 0.7, 1.35);
   const m = field.S > 0 ? fieldMetrics(t) : m0;
-  Object.assign(g, { field, cup: c, firm: pp, uN: t.uN, wN: t.wN, nU: t.uN, nW: t.wN, P: Math.max(fieldPmax(c, pp) * k * amp, 0.005),
+  Object.assign(g, { field, cup: c, firm: pp, uN: t.uN, wN: t.wN, nU: t.uN, nW: t.wN, P: Math.max(fieldPmax(c, pp) * amp, 0.005),
     top: m.top, bot: m.imf, imf: m.imf, Rup: Math.max(m.top - t.wN, 0.03), Rlo: Math.max(t.wN - m.imf, 0.03), Rmed: Math.max(t.uN - m.med, 0.03), Rlat: Math.max(m.lat - t.uN, 0.03),
-    dropA: m.nipDrop, wV: t.wN - m.nipDrop, vol: fieldVolume(c, pp) * (k * amp) ** 3 });
+    dropA: m.nipDrop, wV: t.wN - m.nipDrop, vol: fieldVolume(c, pp) * amp ** 3 });
 }
 // 預設乳房(病人條件)的估計體積(mL),以數值積分
 let VOL = { ver: -1, ml: 0 };
@@ -485,9 +485,9 @@ function estVolume() {
 const rBlend = (v, a, b, sc) => a + (b - a) * smooth(-0.025 * sc, 0.025 * sc, v);
 // 平滑環形包絡與下極回收;乳頭、病灶與重力分開計算。
 function profile(du, dw, g) { return surfaceShape(du, dw, g).D; }
-function breastField(du, dw, p) {
+function breastField(du, dw, p, ux) {
   const g = p.g || geomOf(p);
-  const shape = p.implantEnvelope ? implantEnvelopeShape(du, dw, g) : g.field ? fieldShape(du, dw, g) : surfaceShape(du, dw, g);
+  const shape = p.implantEnvelope ? implantEnvelopeShape(du, dw, g) : g.field ? fieldShape(du, dw, g, ux) : surfaceShape(du, dw, g);
   let D = shape.D;
   if (p.implantEnvelope && p.areola && g.P > .008) D += nipBump(du, dw, p, g);
   const D0 = D;
@@ -595,7 +595,7 @@ function prepBreastRegions(skinGeom) {
       if (d < bd) { bd = d; best = i; }
     }
     const c = new THREE.Vector3().fromBufferAttribute(pos, best);
-    const idx = [], du = [], dw = [], wt = [], wrapWt = [];
+    const idx = [], du = [], dw = [], wt = [], wrapWt = [], wtN = [], ux = [];
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
       // 前胸為主;往側胸(z 變小)逐漸減弱變形,避免在邊界撕裂
@@ -605,9 +605,11 @@ function prepBreastRegions(skinGeom) {
       if (patchR2 >= 1.2) continue;
       wrapWt.push((a / 0.125) ** 2 + (b / 0.135) ** 2 <= 1.2 ? smooth(0, 0.035, z) * (1 - smooth(0.165, 0.19, Math.abs(x))) : 0);
       const frontGap = Math.max(0, chestAt(x, y, z) - z);
+      wtN.push((1 - smooth(0.001, 0.006, frontGap)) * (1 - smooth(0.9, 1.2, patchR2))); // 雕塑形狀在乳房外自然歸零,只排除被前胸擋住的頂點
+      ux.push(unwrapX(x * s, z)); // 繞軀幹展開的橫向座標(胸側壁上的點才分得開)
       idx.push(i); du.push(a); dw.push(b); wt.push((1 - smooth(0.001, 0.006, frontGap)) * smooth(0.0, 0.035, z) * (1 - smooth(0.165, 0.19, Math.abs(x))) * (1 - smooth(0.75, 1.2, patchR2))); // 腋下邊界前漸減,避免出現台階
     }
-    regions[key] = { s, c, chestAt, idx: Int32Array.from(idx), du: Float32Array.from(du), dw: Float32Array.from(dw), wt: Float32Array.from(wt), wrapWt: Float32Array.from(wrapWt), frame: sideFrame(s) };
+    regions[key] = { s, c, chestAt, idx: Int32Array.from(idx), du: Float32Array.from(du), dw: Float32Array.from(dw), wt: Float32Array.from(wt), wrapWt: Float32Array.from(wrapWt), wtN: Float32Array.from(wtN), ux: Float32Array.from(ux), frame: sideFrame(s) };
   }
   return regions;
 }
@@ -1490,8 +1492,8 @@ function updateBreasts(inst, s) {
     const [nu, nw] = [g.nU + (p.nsu || 0), g.nW + (p.nsw || 0)];
     let maxD = -1, maxI = -1; let top = -1e9, low = 1e9;
     for (let j = 0; j < reg.idx.length; j++) {
-      const i = reg.idx[j]; const wk = p.implantEnvelope ? reg.wrapWt[j] : reg.wt[j]; if (p.implantEnvelope && wk <= 0) continue;
-      let { D, drop, lat } = breastField(reg.du[j], reg.dw[j], p); D *= wk; drop *= wk; lat = (lat || 0) * wk;
+      const i = reg.idx[j]; const wk = p.implantEnvelope ? reg.wrapWt[j] : g.field ? reg.wtN[j] : reg.wt[j]; if (p.implantEnvelope && wk <= 0) continue;
+      let { D, drop, lat } = breastField(reg.du[j], reg.dw[j], p, reg.ux[j]); D *= wk; drop *= wk; lat = (lat || 0) * wk;
       if (thin) { D = wrap(i) * wk + nipBump(reg.du[j], reg.dw[j], p, g) * smooth(.002, .01, wrap(i)); drop = 0; }
       else if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D - 0.012) D = smax(D, need, 0.012) + (need > D ? nipBump(reg.du[j], reg.dw[j], p, g) : 0); }
       // 鼓出只作用在朝前的胸壁(側胸壁的頂點和前方共用同一組平面座標,推了會摺疊)
@@ -1515,7 +1517,7 @@ function updateBreasts(inst, s) {
     for (const [part, scale, off] of [['fat_', 1, -0.004], ['gland_', 0.72, -0.006]]) {
       const m = inst.byName.get(part + key); const gm = m.geometry; const pa = gm.attributes.position.array; const { src, regionK } = gm.userData;
       for (let v = 0; v < src.length; v++) {
-        const i = src[v], j = regionK[v]; let { D, drop, lat } = breastField(reg.du[j], reg.dw[j], p); const wk = p.implantEnvelope ? reg.wrapWt[j] : reg.wt[j]; D *= wk; drop *= wk; lat = wrap ? 0 : (lat || 0) * wk;
+        const i = src[v], j = regionK[v]; let { D, drop, lat } = breastField(reg.du[j], reg.dw[j], p, reg.ux[j]); const wk = p.implantEnvelope ? reg.wrapWt[j] : g.field ? reg.wtN[j] : reg.wt[j]; D *= wk; drop *= wk; lat = wrap ? 0 : (lat || 0) * wk;
         if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D) D = need + nipBump(reg.du[j], reg.dw[j], p, g); }
         const d = Math.max(D * scale + off, -0.003);
         const fz = smooth(0.06, 0.1, base[i * 3 + 2]); const [bu, bw] = bulgeOf(reg.du[j], reg.dw[j], D, g, p.implantEnvelope).map((v) => v * fz);
