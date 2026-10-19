@@ -127,11 +127,20 @@ const TMP = [0, 0, 0];
 export function fieldShape(du, dw, g) {
   const F = g.field;
   const s = sampleField((du + F.cx) / F.kx, MF.nipY + (dw - g.wN) / F.k, F.w, TMP);
-  const a = F.k * F.amp; const D = s[0] * a;
+  const a = F.k * F.amp; let D = s[0] * a;
   let drop = s[2] * a;
   // 臨床下垂(重力):組織沿胸壁往下滑。有組織處滑最多,乳房下皺褶與上緣附著處歸零(邊界沿雕塑形狀本身的 U 形輪廓,
-  // 不是一條水平線);上極皮膚因此被拉長變平,下極越過皺褶往下垂
-  if (F.S > 0) drop += F.S * smooth(0.002, 0.016, D) * (dw <= g.wN ? 1 : 1 - 0.85 * smooth(g.wN, F.top, dw));
+  // 不是一條水平線);下極越過皺褶往下垂
+  if (F.S > 0) {
+    const tissue = smooth(0.002, 0.016, D);
+    const up = dw <= g.wN ? 0 : smooth(g.wN, F.top, dw);
+    drop += F.S * tissue * (1 - 0.85 * up);
+    // 上極被往下拉長:體積守恆,拉長幾倍、厚度就除以幾倍(上極變平、變空)
+    if (up > 0 && up < 1) {
+      const t = (dw - g.wN) / (F.top - g.wN), ds = 6 * t * (1 - t) / (F.top - g.wN);
+      D /= 1 + F.S * tissue * 0.85 * ds;
+    }
+  }
   return { D, lat: s[1] * a, drop };
 }
 // 由位移場量出外形:看得到的乳房下皺褶(沿乳頭經線,皮膚離開胸壁、或往下翻折的位置)、上緣、內外緣

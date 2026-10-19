@@ -1214,8 +1214,8 @@ function buildFatDrops(inst) {
   for (let i = 0; i < m.count; i++) {
     const a = hash1(i * 3.1) * Math.PI * 2, rr = Math.sqrt(hash1(i * 7.7)) * 0.03;
     const u = q[0] + rr * Math.cos(a), w = q[1] + rr * Math.sin(a);
-    const { D, drop } = breastField(u, w, p); const fr = 0.25 + 0.6 * hash1(i * 13.3);
-    const pt = envelopePoint(inst, 'R', basePointInterp(inst, 'R', u, w), Math.max(D, 0.004) * fr, drop * fr);
+    const { D, drop, lat } = breastField(u, w, p); const fr = 0.25 + 0.6 * hash1(i * 13.3);
+    const pt = envelopePoint(inst, 'R', basePointInterp(inst, 'R', u, w), Math.max(D, 0.004) * fr, drop * fr, lat * fr);
     const r = 0.0014 + 0.0012 * hash1(i * 5.1);
     mtx.makeScale(r, r, r).setPosition(pt); m.setMatrixAt(i, mtx);
   }
@@ -1228,6 +1228,7 @@ function hash1(n) { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x
 function basePointInterp(inst, key, u, w, arr) {
   const reg = inst.regions[key]; const base = arr || inst.skin.userData.base; const best = [];
   for (let k = 0; k < reg.idx.length; k++) {
+    if (reg.wt[k] < 0.5) continue; // 被前胸皮膚擋住的頂點(皮膚網格的內側)不跟著乳房變形,不能拿來內插
     const d = (reg.du[k] - u) ** 2 + (reg.dw[k] - w) ** 2;
     if (best.length < 4 || d < best[3][0]) { best.push([d, k]); best.sort((a, b) => a[0] - b[0]); if (best.length > 4) best.pop(); }
   }
@@ -1496,7 +1497,7 @@ function updateBreasts(inst, s) {
       // 鼓出只作用在朝前的胸壁(側胸壁的頂點和前方共用同一組平面座標,推了會摺疊)
       const fz = smooth(0.06, 0.1, base[i * 3 + 2]);
       const [bu, bw] = thin ? [0, 0] : bulgeOf(reg.du[j], reg.dw[j], D, g, p.implantEnvelope).map((v) => v * fz);
-      const dx = f.x * D + reg.s * (bu + (thin || wrap ? 0 : lat * fz)), dy = f.y * D - drop + bw;
+      const dx = f.x * D + reg.s * (bu + (thin || wrap ? 0 : lat)), dy = f.y * D - drop + bw; // 雕塑形狀的側向位移是逐點資料,側胸也要完整套用
       const dz = thin || wrap ? 0 : chestShift(reg, base[i * 3], base[i * 3 + 1], base[i * 3 + 2], dx, dy);
       arr[i * 3] += dx; arr[i * 3 + 1] += dy; arr[i * 3 + 2] += f.z * D + dz;
       const dn = (reg.du[j] - nu) ** 2 + (reg.dw[j] - nw) ** 2;
@@ -1518,7 +1519,7 @@ function updateBreasts(inst, s) {
         if (wrap) { const need = wrap(i); drop *= 1 - 0.75 * smooth(-0.012, 0.012, need - D); if (need > D) D = need + nipBump(reg.du[j], reg.dw[j], p, g); }
         const d = Math.max(D * scale + off, -0.003);
         const fz = smooth(0.06, 0.1, base[i * 3 + 2]); const [bu, bw] = bulgeOf(reg.du[j], reg.dw[j], D, g, p.implantEnvelope).map((v) => v * fz);
-        const dx = f.x * d + reg.s * (bu + lat * fz) * scale, dy = f.y * d - drop * scale + bw * scale;
+        const dx = f.x * d + reg.s * (bu + lat) * scale, dy = f.y * d - drop * scale + bw * scale;
         const dz = wrap ? 0 : chestShift(reg, base[i * 3], base[i * 3 + 1], base[i * 3 + 2], dx, dy);
         pa[v * 3] = base[i * 3] + dx; pa[v * 3 + 1] = base[i * 3 + 1] + dy; pa[v * 3 + 2] = base[i * 3 + 2] + f.z * d + dz;
       }
