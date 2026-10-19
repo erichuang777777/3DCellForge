@@ -124,7 +124,7 @@ export function sampleField(u, y, wts, out = [0, 0, 0]) {
 }
 // 胸前平面座標(du 往外側為正、dw 往上為正,相對乳房區域中心)→ 位移;ux:頂點的展開橫向座標(沒有時用胸前輪廓估)
 // g.field = { w: 權重, cx, cy: 區域中心, du0, dy0: 乳頭基底相對雕塑模型的平移, amp: 超出最大罩杯的放大倍數, S, top: 重力下垂 }
-const TMP = [0, 0, 0];
+const TMP = [0, 0, 0], TMP2 = [0, 0, 0];
 export function fieldShape(du, dw, g, ux) {
   const F = g.field;
   if (ux == null) { const x = du + F.cx; ux = unwrapX(x, frontZ(x)); }
@@ -133,7 +133,10 @@ export function fieldShape(du, dw, g, ux) {
   // 臨床下垂(重力):組織沿胸壁往下滑。有組織處滑最多,乳房下皺褶與上緣附著處歸零(邊界沿雕塑形狀本身的 U 形輪廓,
   // 不是一條水平線);下極越過皺褶往下垂
   if (F.S > 0) {
-    const tissue = smooth(0.002, 0.016, D);
+    // 組織權重用周圍 2.5 cm 的平均厚度:皮膚是連續的,乳房邊緣外也被連帶拉動,不會在邊緣出現剪切縫
+    const v = dw + F.cy - F.dy0, u = ux - F.du0; let Db = D;
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; Db += sampleField(u + 0.025 * Math.cos(a), v + 0.025 * Math.sin(a), F.w, TMP2)[0] * F.amp; }
+    const tissue = smooth(0.001, 0.014, Db / 9);
     const up = dw <= g.wN ? 0 : smooth(g.wN, F.top, dw);
     drop += F.S * tissue * (1 - 0.85 * up);
     // 上極被往下拉長:體積守恆,拉長幾倍、厚度就除以幾倍(上極變平、變空)

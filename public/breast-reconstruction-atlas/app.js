@@ -466,7 +466,7 @@ function naturalField(g, p, M, sc, lift) {
   }
   // 重力下垂量:鬆弛程度 × 重量(同樣鬆弛,越重的乳房垂得越多;非線性)
   const m0 = fieldMetrics(t); field.top = m0.top;
-  field.S = 0.095 * Math.pow(clampN(g.pt / 3, 0, 1), 1.3) * clampN(Math.pow(vol / 430, 0.3), 0.7, 1.35);
+  field.S = 0.1 * Math.pow(clampN(g.pt / 3, 0, 1), 1.3) * clampN(Math.pow(vol / 430, 0.3), 0.7, 1.35);
   const m = field.S > 0 ? fieldMetrics(t) : m0;
   Object.assign(g, { field, cup: c, firm: pp, uN: t.uN, wN: t.wN, nU: t.uN, nW: t.wN, P: Math.max(fieldPmax(c, pp) * amp, 0.005),
     top: m.top, bot: m.imf, imf: m.imf, Rup: Math.max(m.top - t.wN, 0.03), Rlo: Math.max(t.wN - m.imf, 0.03), Rmed: Math.max(t.uN - m.med, 0.03), Rlat: Math.max(m.lat - t.uN, 0.03),
