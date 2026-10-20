@@ -139,12 +139,16 @@ export function fieldShape(du, dw, g, ux) {
     // 胸側 12–17 cm 之間漸減到 0(再往外是手臂與變形區域邊界,不能被拉動)
     const tissue = smooth(0.001, 0.014, Db / 9) * (1 - smooth(0.12, 0.17, du + F.cx));
     const up = dw <= g.wN ? 0 : smooth(g.wN, F.top, dw);
-    drop += F.S * tissue * (1 - 0.85 * up);
-    // 上極被往下拉長:體積守恆,拉長幾倍、厚度就除以幾倍(上極變平、變空)
+    const g0 = F.S * tissue * (1 - 0.85 * up);
+    drop += g0;
+    // 上極被往下拉長:體積守恆,拉長幾倍、厚度就除以幾倍(上極變平、變空);最多變薄到 60%
     if (up > 0 && up < 1) {
       const t = (dw - g.wN) / (F.top - g.wN), ds = 6 * t * (1 - t) / (F.top - g.wN);
-      D /= 1 + F.S * tissue * 0.85 * ds;
+      D /= Math.min(1 + F.S * tissue * 0.85 * ds, 1 / 0.6);
     }
+    // 垂過乳房下皺褶的部分同時往前(像以皺褶為軸往下轉),才不會壓進腹部皮膚
+    const below = F.imf0 - (dw - drop + FRAME_F[1] * D);
+    if (below > 0) D += 0.6 * Math.min(below, g0);
   }
   return { D, lat: s[1] * F.amp, drop };
 }

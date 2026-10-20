@@ -466,7 +466,7 @@ function naturalField(g, p, M, sc, lift) {
   }
   // 重力下垂:臨床鬆弛程度 × 重量決定乳頭要下降多少(同樣鬆弛,越重的乳房垂得越多;非線性)。
   // 雕塑形狀的「鬆」本身已經讓大罩杯下垂一些,先扣掉,重力只補差額(不重複計算)
-  const m0 = fieldMetrics(t); field.top = m0.top;
+  const m0 = fieldMetrics(t); field.top = m0.top; field.imf0 = m0.imf;
   const want = 0.14 * Math.pow(clampN(g.pt / 3, 0, 1), 1.3) * clampN(Math.pow(vol / 430, 0.3), 0.7, 1.35);
   const firm = { ...t, field: { ...field, w: fieldWeights(c, 0) } };
   const already = Math.max(0, m0.nipDrop - fieldMetrics(firm).nipDrop);
