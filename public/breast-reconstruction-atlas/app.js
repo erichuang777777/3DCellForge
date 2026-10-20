@@ -16,7 +16,8 @@ function augsimState() {
   // 術後外形:術前的自然乳房 + 貼在胸壁上的假體圓頂(厚度相加)。肌肉下或雙平面被肌肉壓住一些突度;
   // 假體撐起部分下垂。假體本身只在剝開時顯示
   const cover = AUGSIM.plane === 'sub' ? 0.85 : AUGSIM.plane === 'dual' ? 0.9 : 0.95;
-  const imp = { rx: W / 2 * 1.04, ry: W / 2, P: proj * cover, cu: 0.004, cw: -0.12 * W / 2, teardrop: AUGSIM.shape !== 'round', ml: AUGSIM.ml };
+  // 圓頂中心對齊實際假體位置(胸大肌定位,約在乳頭基底下方 1.5 cm),範圍略大於假體,皮膚才蓋得住假體與被推起的胸大肌
+  const imp = { rx: W / 2 * 1.14, ry: W / 2 * 1.1, P: proj * cover, cu: 0.003, cw: -0.26 * W / 2, teardrop: AUGSIM.shape !== 'round', ml: AUGSIM.ml };
   const side = { shape: 'natural', imp, pt: PROFILE.pt * 0.5 };
   return { R: side, L: side, aug: { plane: AUGSIM.plane, fill: 1, vis: 1, shapeR: AUGSIM.shape, shapeL: AUGSIM.shape, ml: AUGSIM.ml, prof: pf, noWrap: true } };
 }
