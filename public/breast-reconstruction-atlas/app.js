@@ -12,20 +12,19 @@ const PLANE_ZH = { subglandular: '乳腺下', dual: '雙平面', sub: '胸大肌
 // 術後外形:原本的乳房加上假體的突度,底寬至少等於假體底寬;圓形假體上半部飽滿、水滴形較自然。
 // 假體本身只在剝開時顯示(皮膚外形由這組參數決定,避免包覆造成摺痕)
 function augsimState() {
-  const pf = PROF[AUGSIM.prof][0]; const { W, proj } = implDims(AUGSIM.ml, pf);
-  const g0 = geomOf(BASE_STATE.R); const W0 = g0.sc * 0.1275;
-  const cover = AUGSIM.plane === 'sub' ? 0.85 : AUGSIM.plane === 'dual' ? 0.9 : 0.95; // 肌肉下:突度被肌肉壓住一些
-  const Pabs = g0.P * 0.6 + proj * cover + 0.01;
-  const side = AUGSIM.shape === 'round'
-    ? { Pabs, shape: 'natural', upper: Math.min(0.62 + 0.2 * (pf - 1), 0.75), ptosis: 0.2, ratio: 0.4, sc: Math.max(1.06, (W * 1.12) / W0) }
-    : { Pabs, shape: 'natural', upper: 0.36 + 0.12 * (pf - 1), ptosis: 0.0, ratio: 0.38, sc: Math.max(1.04, (W * 1.08) / W0) };
+  const pf = PROF[AUGSIM.prof][0];
+  // 術後外形用同一套雕塑形狀公式:原本乳房體積 + 假體體積(肌肉下被壓住一些);圓形假體上極較飽滿,水滴形接近 45:55;
+  // 假體撐起部分下垂,乳頭仍落在原本的美學三角形位置。假體本身只在剝開時顯示
+  const cover = AUGSIM.plane === 'sub' ? 0.85 : AUGSIM.plane === 'dual' ? 0.9 : 0.95;
+  const round = AUGSIM.shape === 'round';
+  const side = { shape: 'natural', addVol: AUGSIM.ml * cover, ratio: round ? clampN(0.5 + 0.06 * (pf - 1), 0.47, 0.58) : 0.46 + 0.04 * (pf - 1), pt: PROFILE.pt * 0.5 };
   return { R: side, L: side, aug: { plane: AUGSIM.plane, fill: 1, vis: 1, shapeR: AUGSIM.shape, shapeL: AUGSIM.shape, ml: AUGSIM.ml, prof: pf, noWrap: true } };
 }
 SCENARIOS.push({
   id: 'augsim', cat: 'cosmetic', tag: '美容手術', name: '隆乳模擬:選假體大小與形狀', short: '隆乳模擬',
   one: '以目前設定的乳房外形為術前,選擇假體的體積、突度、形狀與放置層次,看術後外形的變化。數值為依假體尺寸換算的示意。',
   steps: [
-    { title: '術前(目前的外形)', cam: 'front', text: '這是依「病人條件」設定產生的術前外形。可在上方改罩杯、下垂程度或輸入量測值。', get state() { const P = geomOf(BASE_STATE.R).P; return { R: { Pabs: P, sc: 1 }, L: { Pabs: P, sc: 1 } }; } },
+    { title: '術前(目前的外形)', cam: 'front', text: '這是依「病人條件」設定產生的術前外形。可在上方改罩杯、下垂程度或輸入量測值。', state: {} },
     { title: '術後模擬', cam: 'front', dur: 2600, get text() { return augsimText(); }, get state() { return augsimState(); } }
   ],
   pros: ['可依身形挑選體積與突度', '術前就能和醫師討論想要的外觀'], cons: ['模擬只代表比例,不保證術後實際外觀', '皮膚彈性、組織厚度與胸廓形狀都會影響結果'], fit: ['考慮隆乳或對側對稱手術的病人']
@@ -402,7 +401,7 @@ const bmi = () => PROFILE.weight / (PROFILE.height / 100) ** 2;
 const GEO = new Map();
 const NOTCH_Y = 1.41, NOTCH_Z = 0.06, C_X = 0.097, C_Y = 1.252; // 胸骨上切跡高度、乳房區域中心(模型座標)
 function geomOf(p) {
-  const key = JSON.stringify([p.P, p.Pabs, p.sc, p.shape, p.lift, p.pt, p.ptosis, p.upper, p.ratio, p.implantEnvelope, PROFILE.ver]);
+  const key = JSON.stringify([p.P, p.Pabs, p.sc, p.shape, p.lift, p.pt, p.ptosis, p.upper, p.ratio, p.addVol, p.implantEnvelope, PROFILE.ver]);
   let g = GEO.get(key); if (g) return g;
   const M = measures(); const sc = p.sc || 1; const round = p.shape === 'round';
   // 突度由上下胸圍差決定;基底寬度由下胸圍(胸廓大小)決定
@@ -454,7 +453,7 @@ function naturalField(g, p, M, sc, lift) {
   // 下垂程度 pt(0–3)→ 雕塑形狀的緊實度軸 0–2(1 以上沿 MakeHuman 由緊到鬆的方向外插)。
   // 大罩杯的重度下垂完全由雕塑形狀產生(位移場連續一致,不會破圖);同樣鬆弛,越重的乳房垂得越多
   const pp = clampN(g.pt * 2 / 3, 0, 2);
-  const vol = cupVolume(M.d) * Math.pow((p.P ?? 0.064) / 0.064, 1.5) * sc ** 3;
+  const vol = cupVolume(M.d) * Math.pow((p.P ?? 0.064) / 0.064, 1.5) * sc ** 3 + (p.addVol || 0); // addVol:隆乳假體等額外體積(mL)
   const { c, amp } = cupForVolume(vol, pp);
   const field = { w: fieldWeights(c, pp), cx: C_X, cy: C_Y, du0: 0, dy0: lift, amp, S: 0, su: 1, sl: 1 };
   const t = { field, uN: MH_NIP.x - C_X, wN: MH_NIP.y - C_Y + lift };
