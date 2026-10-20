@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { surfaceShape, implantEnvelopeShape, fieldShape, fieldMetrics, fieldWeights, fieldVolume, fieldPmax, cupForVolume, unwrapX, frontZ, fieldPoleRatio, MH_NIP } from './surface.js';
+import { surfaceShape, implantEnvelopeShape, fieldShape, fieldMetrics, fieldWeights, fieldVolume, fieldPmax, cupForVolume, unwrapX, frontZ, MH_NIP } from './surface.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SCENARIOS as BASE_SCENARIOS, END_STATES as BASE_END, COMPARE_DEFAULT, INFO, LAYER_NAMES, PERF_MAP } from './content.js';
@@ -459,9 +459,9 @@ function naturalField(g, p, M, sc, lift) {
   const t = { field, uN: MH_NIP.x - C_X, wN: MH_NIP.y - C_Y + lift };
   const c0 = cupForVolume(vol, 0);
   const firm = { ...t, field: { ...field, w: fieldWeights(c0.c, 0), amp: c0.amp } };
-  // 上下極比例(乳頭為界;理想約 45:55):以緊實狀態量雕塑形狀原本的比例,再把上極、下極分別縮放到設定值
-  const r = clampN(p.ratio ?? PROFILE.ratio, 0.3, 0.6), r0 = fieldPoleRatio(firm, fieldMetrics(firm).imf);
-  field.su = clampN(r / r0, 0.6, 1.5); field.sl = clampN((1 - r) / (1 - r0), 0.6, 1.5);
+  // 上下極比例滑桿(預設 0.45 = 雕塑形狀原樣):偏離預設時,乳頭上方與下方分別縮放
+  const r = clampN(p.ratio ?? PROFILE.ratio, 0.3, 0.6);
+  field.su = clampN(r / 0.45, 0.7, 1.35); field.sl = clampN((1 - r) / 0.55, 0.7, 1.35);
   // 乳頭位置:未下垂(緊實)時看得到的乳頭落在量測(或美學三角形)位置;下垂時乳頭再由形狀往下移。
   // 胸骨上切跡到乳頭用立體直線距離,乳頭間距用左右距離
   {
