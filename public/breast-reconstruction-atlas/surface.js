@@ -152,6 +152,15 @@ export function fieldShape(du, dw, g, ux) {
     const below = F.imf0 - (dw - drop + FRAME_F[1] * D);
     if (below > 0) D += 0.6 * Math.min(below, g0);
   }
+  // 隆乳假體:貼在胸壁上的圓頂,把原本的組織整個往前推(厚度相加);邊緣由覆蓋的組織緩和
+  if (F.imp) {
+    const I = F.imp, x = (du - g.uN - I.cu) / I.rx, y = (dw - g.wN - I.cw) / I.ry, r = Math.hypot(x, y);
+    if (r < 1.25) {
+      const lowW = I.teardrop ? 0.75 + 0.25 * smooth(-0.6, 0.6, -y) * 1.6 : 1; // 水滴形:下半部較厚
+      const dome = Math.pow(Math.max(0, 1 - Math.pow(r / 1.08, 2.4)), 0.7) * (1 - smooth(1.0, 1.25, r)) + 0.06 * (1 - smooth(1.0, 1.25, r));
+      D += I.P * Math.min(lowW, 1.15) * dome;
+    }
+  }
   return { D, lat: s[1] * F.amp, drop };
 }
 // 由位移場量出外形:看得到的乳房下皺褶(沿乳頭經線,皮膚離開胸壁、或往下翻折的位置)、上緣、內外緣

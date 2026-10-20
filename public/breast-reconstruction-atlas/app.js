@@ -12,12 +12,12 @@ const PLANE_ZH = { subglandular: '乳腺下', dual: '雙平面', sub: '胸大肌
 // 術後外形:原本的乳房加上假體的突度,底寬至少等於假體底寬;圓形假體上半部飽滿、水滴形較自然。
 // 假體本身只在剝開時顯示(皮膚外形由這組參數決定,避免包覆造成摺痕)
 function augsimState() {
-  const pf = PROF[AUGSIM.prof][0];
-  // 術後外形用同一套雕塑形狀公式:原本乳房體積 + 假體體積(肌肉下被壓住一些);圓形假體上極較飽滿,水滴形接近 45:55;
-  // 假體撐起部分下垂,乳頭仍落在原本的美學三角形位置。假體本身只在剝開時顯示
+  const pf = PROF[AUGSIM.prof][0]; const { W, proj } = implDims(AUGSIM.ml, pf);
+  // 術後外形:術前的自然乳房 + 貼在胸壁上的假體圓頂(厚度相加)。肌肉下或雙平面被肌肉壓住一些突度;
+  // 假體撐起部分下垂。假體本身只在剝開時顯示
   const cover = AUGSIM.plane === 'sub' ? 0.85 : AUGSIM.plane === 'dual' ? 0.9 : 0.95;
-  const round = AUGSIM.shape === 'round';
-  const side = { shape: 'natural', addVol: AUGSIM.ml * cover, ratio: round ? clampN(0.5 + 0.06 * (pf - 1), 0.47, 0.58) : 0.46 + 0.04 * (pf - 1), pt: PROFILE.pt * 0.5 };
+  const imp = { rx: W / 2 * 1.04, ry: W / 2, P: proj * cover, cu: 0.004, cw: -0.12 * W / 2, teardrop: AUGSIM.shape !== 'round', ml: AUGSIM.ml };
+  const side = { shape: 'natural', imp, pt: PROFILE.pt * 0.5 };
   return { R: side, L: side, aug: { plane: AUGSIM.plane, fill: 1, vis: 1, shapeR: AUGSIM.shape, shapeL: AUGSIM.shape, ml: AUGSIM.ml, prof: pf, noWrap: true } };
 }
 SCENARIOS.push({
@@ -401,7 +401,7 @@ const bmi = () => PROFILE.weight / (PROFILE.height / 100) ** 2;
 const GEO = new Map();
 const NOTCH_Y = 1.41, NOTCH_Z = 0.06, C_X = 0.097, C_Y = 1.252; // 胸骨上切跡高度、乳房區域中心(模型座標)
 function geomOf(p) {
-  const key = JSON.stringify([p.P, p.Pabs, p.sc, p.shape, p.lift, p.pt, p.ptosis, p.upper, p.ratio, p.addVol, p.implantEnvelope, PROFILE.ver]);
+  const key = JSON.stringify([p.P, p.Pabs, p.sc, p.shape, p.lift, p.pt, p.ptosis, p.upper, p.ratio, p.imp && [p.imp.P, p.imp.rx, p.imp.teardrop], p.implantEnvelope, PROFILE.ver]);
   let g = GEO.get(key); if (g) return g;
   const M = measures(); const sc = p.sc || 1; const round = p.shape === 'round';
   // 突度由上下胸圍差決定;基底寬度由下胸圍(胸廓大小)決定
@@ -453,9 +453,10 @@ function naturalField(g, p, M, sc, lift) {
   // 下垂程度 pt(0–3)→ 雕塑形狀的緊實度軸 0–2(1 以上沿 MakeHuman 由緊到鬆的方向外插)。
   // 大罩杯的重度下垂完全由雕塑形狀產生(位移場連續一致,不會破圖);同樣鬆弛,越重的乳房垂得越多
   const pp = clampN(g.pt * 2 / 3, 0, 2);
-  const vol = cupVolume(M.d) * Math.pow((p.P ?? 0.064) / 0.064, 1.5) * sc ** 3 + (p.addVol || 0); // addVol:隆乳假體等額外體積(mL)
+  const vol = cupVolume(M.d) * Math.pow((p.P ?? 0.064) / 0.064, 1.5) * sc ** 3;
   const { c, amp } = cupForVolume(vol, pp);
   const field = { w: fieldWeights(c, pp), cx: C_X, cy: C_Y, du0: 0, dy0: lift, amp, S: 0, su: 1, sl: 1 };
+  const imp = p.imp || null; // 隆乳假體圓頂:乳頭位置與皺褶用術前形狀決定,最後才加上
   const t = { field, uN: MH_NIP.x - C_X, wN: MH_NIP.y - C_Y + lift };
   const c0 = cupForVolume(vol, 0);
   const firm = { ...t, field: { ...field, w: fieldWeights(c0.c, 0), amp: c0.amp } };
@@ -481,9 +482,10 @@ function naturalField(g, p, M, sc, lift) {
   const already = Math.max(0, m0.nipDrop - mf.nipDrop);
   field.S = Math.max(0, want - already);
   const m = field.S > 0 ? fieldMetrics(t) : m0;
+  if (imp) field.imp = imp;
   Object.assign(g, { field, cup: c, firm: pp, uN: t.uN, wN: t.wN, nU: t.uN, nW: t.wN, P: Math.max(fieldPmax(c, pp) * amp, 0.005),
     top: mf.top, bot: mf.imf, imf: mf.imf, Rup: Math.max(mf.top - t.wN, 0.03), Rlo: Math.max(t.wN - mf.imf, 0.03), Rmed: Math.max(t.uN - m.med, 0.03), Rlat: Math.max(m.lat - t.uN, 0.03),
-    dropA: m.nipDrop, wV: t.wN - m.nipDrop, vol: fieldVolume(c, pp) * amp ** 3 });
+    dropA: m.nipDrop, wV: t.wN - m.nipDrop, vol: fieldVolume(c, pp) * amp ** 3 + (imp ? imp.ml : 0) });
 }
 // 預設乳房(病人條件)的估計體積(mL),以數值積分
 let VOL = { ver: -1, ml: 0 };
