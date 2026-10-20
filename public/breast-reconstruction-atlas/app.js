@@ -602,10 +602,12 @@ function prepBreastRegions(skinGeom) {
       if (z < 0.0 || Math.abs(x) > 0.19) continue;
       const a = (x - c.x) * s, b = y - c.y;
       const patchR2 = (a / 0.19) ** 2 + (b / 0.24) ** 2;
-      if (patchR2 >= 1.2) continue;
+      // 自然乳房(雕塑形狀+重力)的區域往下延伸較多:大罩杯下垂時,被拉動的皮膚可到乳房中心下方 30 cm 以上
+      const patchN = (a / 0.19) ** 2 + (b / (b < 0 ? 0.38 : 0.24)) ** 2;
+      if (patchR2 >= 1.2 && patchN >= 1.2) continue;
       wrapWt.push((a / 0.125) ** 2 + (b / 0.135) ** 2 <= 1.2 ? smooth(0, 0.035, z) * (1 - smooth(0.165, 0.19, Math.abs(x))) : 0);
       const frontGap = Math.max(0, chestAt(x, y, z) - z);
-      wtN.push((1 - smooth(0.001, 0.006, frontGap)) * (1 - smooth(0.9, 1.2, patchR2))); // 雕塑形狀在乳房外自然歸零,只排除被前胸擋住的頂點
+      wtN.push((1 - smooth(0.001, 0.006, frontGap)) * (1 - smooth(0.9, 1.2, patchN)) * (1 - smooth(0.17, 0.19, Math.abs(x)))); // 雕塑形狀在乳房外自然歸零,只排除被前胸擋住的頂點
       ux.push(unwrapX(x * s, z)); // 繞軀幹展開的橫向座標(胸側壁上的點才分得開)
       idx.push(i); du.push(a); dw.push(b); wt.push((1 - smooth(0.001, 0.006, frontGap)) * smooth(0.0, 0.035, z) * (1 - smooth(0.165, 0.19, Math.abs(x))) * (1 - smooth(0.75, 1.2, patchR2))); // 腋下邊界前漸減,避免出現台階
     }

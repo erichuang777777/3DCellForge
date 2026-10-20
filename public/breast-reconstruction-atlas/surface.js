@@ -136,7 +136,8 @@ export function fieldShape(du, dw, g, ux) {
     // 組織權重用周圍 2.5 cm 的平均厚度:皮膚是連續的,乳房邊緣外也被連帶拉動,不會在邊緣出現剪切縫
     const v = dw + F.cy - F.dy0, u = ux - F.du0; let Db = D;
     for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; Db += sampleField(u + 0.025 * Math.cos(a), v + 0.025 * Math.sin(a), F.w, TMP2)[0] * F.amp; }
-    const tissue = smooth(0.001, 0.014, Db / 9);
+    // 胸側 12–17 cm 之間漸減到 0(再往外是手臂與變形區域邊界,不能被拉動)
+    const tissue = smooth(0.001, 0.014, Db / 9) * (1 - smooth(0.12, 0.17, du + F.cx));
     const up = dw <= g.wN ? 0 : smooth(g.wN, F.top, dw);
     drop += F.S * tissue * (1 - 0.85 * up);
     // 上極被往下拉長:體積守恆,拉長幾倍、厚度就除以幾倍(上極變平、變空)
