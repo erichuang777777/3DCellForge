@@ -451,10 +451,12 @@ function cupVolume(d) {
 // 罩杯 → 目標體積 → 罩杯軸位置;下垂程度 pt(0–3)→ 緊實度軸 0–1.5(1 以上為外插)。兩軸交互作用:同樣鬆弛,大罩杯下垂得多
 function naturalField(g, p, M, sc, lift) {
   const f = sideFrame(1).f;
-  const pp = clampN(g.pt * 0.5, 0, 1); // 組織緊實度(MakeHuman 範圍內,不外插)
+  // 下垂程度 pt(0–3)→ 雕塑形狀的緊實度軸 0–2(1 以上沿 MakeHuman 由緊到鬆的方向外插)。
+  // 大罩杯的重度下垂完全由雕塑形狀產生(位移場連續一致,不會破圖);同樣鬆弛,越重的乳房垂得越多
+  const pp = clampN(g.pt * 2 / 3, 0, 2);
   const vol = cupVolume(M.d) * Math.pow((p.P ?? 0.064) / 0.064, 1.5) * sc ** 3;
   const { c, amp } = cupForVolume(vol, pp);
-  const field = { w: fieldWeights(c, pp), cx: C_X, cy: C_Y, du0: 0, dy0: lift, amp };
+  const field = { w: fieldWeights(c, pp), cx: C_X, cy: C_Y, du0: 0, dy0: lift, amp, S: 0 };
   // 乳頭基底:罩杯快選用雕塑模型原本的位置(乳頭隨罩杯與下垂自然移動);量測模式讓看得到的乳頭落在量測位置
   const t = { field, uN: MH_NIP.x - C_X, wN: MH_NIP.y - C_Y + lift };
   if (PROFILE.mode === 'meas') {
@@ -464,16 +466,17 @@ function naturalField(g, p, M, sc, lift) {
     field.du0 = unwrapX(xF, frontZ(xF)) - unwrapX(MH_NIP.x, frontZ(MH_NIP.x)); field.dy0 = yF - MH_NIP.y + lift;
     t.uN = xF - C_X; t.wN = yF - C_Y + lift;
   }
-  // 重力下垂:臨床鬆弛程度 × 重量決定乳頭要下降多少(同樣鬆弛,越重的乳房垂得越多;非線性)。
-  // 雕塑形狀的「鬆」本身已經讓大罩杯下垂一些,先扣掉,重力只補差額(不重複計算)
-  const m0 = fieldMetrics(t); field.top = m0.top; field.imf0 = m0.imf;
-  const want = 0.14 * Math.pow(clampN(g.pt / 3, 0, 1), 1.3) * clampN(Math.pow(vol / 430, 0.3), 0.7, 1.35);
-  const firm = { ...t, field: { ...field, w: fieldWeights(c, 0) } };
-  const already = Math.max(0, m0.nipDrop - fieldMetrics(firm).nipDrop);
+  // 乳房下皺褶是胸壁上固定的解剖標記:取同罩杯、緊實狀態的皺褶(重乳房垂到上腹時,看到的摺線會再低一些,但分級以固定標記為準)
+  const firm = { ...t, field: { ...field, w: fieldWeights(cupForVolume(vol, 0).c, 0), amp: cupForVolume(vol, 0).amp, S: 0 } };
+  const mf = fieldMetrics(firm);
+  const m0 = fieldMetrics(t); field.top = mf.top; field.imf0 = mf.imf;
+  // 小罩杯的雕塑形狀鬆弛時下垂很少;不足的乳頭下降量才用重力補(大罩杯不需要,也就不會疊加)
+  const want = 0.12 * Math.pow(clampN(g.pt / 3, 0, 1), 1.3) * clampN(Math.pow(vol / 430, 0.2), 0.8, 1.2);
+  const already = Math.max(0, m0.nipDrop - mf.nipDrop);
   field.S = Math.max(0, want - already);
   const m = field.S > 0 ? fieldMetrics(t) : m0;
   Object.assign(g, { field, cup: c, firm: pp, uN: t.uN, wN: t.wN, nU: t.uN, nW: t.wN, P: Math.max(fieldPmax(c, pp) * amp, 0.005),
-    top: m.top, bot: m.imf, imf: m.imf, Rup: Math.max(m.top - t.wN, 0.03), Rlo: Math.max(t.wN - m.imf, 0.03), Rmed: Math.max(t.uN - m.med, 0.03), Rlat: Math.max(m.lat - t.uN, 0.03),
+    top: mf.top, bot: mf.imf, imf: mf.imf, Rup: Math.max(mf.top - t.wN, 0.03), Rlo: Math.max(t.wN - mf.imf, 0.03), Rmed: Math.max(t.uN - m.med, 0.03), Rlat: Math.max(m.lat - t.uN, 0.03),
     dropA: m.nipDrop, wV: t.wN - m.nipDrop, vol: fieldVolume(c, pp) * amp ** 3 });
 }
 // 預設乳房(病人條件)的估計體積(mL),以數值積分
