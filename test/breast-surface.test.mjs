@@ -194,7 +194,7 @@ const goldOf = (cup, pt = 0) => {
   const nx = g.nU + .097 + f[0] * n.D + n.lat, ny = g.nW + 1.252 - n.drop + f[1] * n.D, nz = surface.frontZ(g.nU + .097) + f[2] * n.D;
   let arc = 0, prev = null;
   for (let dw = g.nW; dw > g.nW - .2; dw -= .001) {
-    const v = breastField(g.uN, dw, { ...p, g }); if (v.D <= .002) break;
+    const v = breastField(g.uN, dw, { ...p, g }); if (v.D <= .0005) break;
     const q = [dw - v.drop + f[1] * v.D, surface.frontZ(g.uN + .097) + f[2] * v.D]; if (prev) arc += Math.hypot(q[0] - prev[0], q[1] - prev[1]); prev = q;
   }
   return { sn: Math.hypot(nx, ny - 1.41, nz - .06), nn: 2 * nx, upper: surface.fieldPoleRatio(g, g.imf), arc };

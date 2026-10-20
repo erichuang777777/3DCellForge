@@ -152,12 +152,14 @@ export function fieldShape(du, dw, g, ux) {
     const below = F.imf0 - (dw - drop + FRAME_F[1] * D);
     if (below > 0) D += 0.6 * Math.min(below, g0);
   }
+  // 乳房與胸壁交接處做約 4 mm 的圓角:厚度從 0 平順長出,乳房下皺褶不會變成銳利的摺線
+  if (D > 0) D = Math.sqrt(D * D + 0.004 * 0.004) - 0.004;
   // 隆乳假體:貼在胸壁上的圓頂,把原本的組織整個往前推(厚度相加);邊緣由覆蓋的組織緩和
   if (F.imp) {
     const I = F.imp, x = (du - g.uN - I.cu) / I.rx, y = (dw - g.wN - I.cw) / I.ry, r = Math.hypot(x, y);
     if (r < 1.25) {
       const lowW = I.teardrop ? 0.75 + 0.25 * smooth(-0.6, 0.6, -y) * 1.6 : 1; // 水滴形:下半部較厚
-      const dome = Math.pow(Math.max(0, 1 - Math.pow(r / 1.08, 2.4)), 0.7) * (1 - smooth(1.0, 1.25, r)) + 0.06 * (1 - smooth(1.0, 1.25, r));
+      const dome = 1 - smooth(0.3, 1.25, r); // 頂部飽滿、邊緣平順淡出(覆蓋組織讓假體邊緣看不出來)
       D += I.P * Math.min(lowW, 1.15) * dome;
     }
   }
