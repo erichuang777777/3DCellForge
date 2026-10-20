@@ -464,9 +464,13 @@ function naturalField(g, p, M, sc, lift) {
     field.du0 = unwrapX(xF, frontZ(xF)) - unwrapX(MH_NIP.x, frontZ(MH_NIP.x)); field.dy0 = yF - MH_NIP.y + lift;
     t.uN = xF - C_X; t.wN = yF - C_Y + lift;
   }
-  // 重力下垂量:鬆弛程度 × 重量(同樣鬆弛,越重的乳房垂得越多;非線性)
+  // 重力下垂:臨床鬆弛程度 × 重量決定乳頭要下降多少(同樣鬆弛,越重的乳房垂得越多;非線性)。
+  // 雕塑形狀的「鬆」本身已經讓大罩杯下垂一些,先扣掉,重力只補差額(不重複計算)
   const m0 = fieldMetrics(t); field.top = m0.top;
-  field.S = 0.1 * Math.pow(clampN(g.pt / 3, 0, 1), 1.3) * clampN(Math.pow(vol / 430, 0.3), 0.7, 1.35);
+  const want = 0.14 * Math.pow(clampN(g.pt / 3, 0, 1), 1.3) * clampN(Math.pow(vol / 430, 0.3), 0.7, 1.35);
+  const firm = { ...t, field: { ...field, w: fieldWeights(c, 0) } };
+  const already = Math.max(0, m0.nipDrop - fieldMetrics(firm).nipDrop);
+  field.S = Math.max(0, want - already);
   const m = field.S > 0 ? fieldMetrics(t) : m0;
   Object.assign(g, { field, cup: c, firm: pp, uN: t.uN, wN: t.wN, nU: t.uN, nW: t.wN, P: Math.max(fieldPmax(c, pp) * amp, 0.005),
     top: m.top, bot: m.imf, imf: m.imf, Rup: Math.max(m.top - t.wN, 0.03), Rlo: Math.max(t.wN - m.imf, 0.03), Rmed: Math.max(t.uN - m.med, 0.03), Rlat: Math.max(m.lat - t.uN, 0.03),
@@ -610,6 +614,19 @@ function prepBreastRegions(skinGeom) {
       wtN.push((1 - smooth(0.001, 0.006, frontGap)) * (1 - smooth(0.9, 1.2, patchN)) * (1 - smooth(0.17, 0.19, Math.abs(x)))); // 雕塑形狀在乳房外自然歸零,只排除被前胸擋住的頂點
       ux.push(unwrapX(x * s, z)); // 繞軀幹展開的橫向座標(胸側壁上的點才分得開)
       idx.push(i); du.push(a); dw.push(b); wt.push((1 - smooth(0.001, 0.006, frontGap)) * smooth(0.0, 0.035, z) * (1 - smooth(0.165, 0.19, Math.abs(x))) * (1 - smooth(0.75, 1.2, patchR2))); // 腋下邊界前漸減,避免出現台階
+    }
+    // 自然乳房的權重沿網格鄰居平滑:腋下附近被遮住的頂點(權重 0)和旁邊的頂點(權重 1)之間,大位移時才不會撕開
+    {
+      const local = new Map(idx.map((v, k) => [v, k])); const nb = idx.map(() => []); const ia = skinGeom.index.array;
+      for (let t = 0; t < ia.length; t += 3) for (let e = 0; e < 3; e++) {
+        const p = local.get(ia[t + e]), q = local.get(ia[t + (e + 1) % 3]);
+        if (p !== undefined && q !== undefined) { nb[p].push(q); nb[q].push(p); }
+      }
+      for (let it = 0; it < 6; it++) {
+        const nx = wtN.slice();
+        for (let k = 0; k < wtN.length; k++) if (nb[k].length) { let m = 0; for (const q of nb[k]) m += wtN[q]; nx[k] = 0.5 * wtN[k] + 0.5 * m / nb[k].length; }
+        for (let k = 0; k < wtN.length; k++) wtN[k] = nx[k];
+      }
     }
     regions[key] = { s, c, chestAt, idx: Int32Array.from(idx), du: Float32Array.from(du), dw: Float32Array.from(dw), wt: Float32Array.from(wt), wrapWt: Float32Array.from(wrapWt), wtN: Float32Array.from(wtN), ux: Float32Array.from(ux), frame: sideFrame(s) };
   }
