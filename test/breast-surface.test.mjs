@@ -184,3 +184,33 @@ test('chest chart exactly follows a sloped source triangle and is stationary at 
   assert.equal(chestShift(reg, 0, 1.1, .125, 0, 0), 0);
   assert.ok(Math.abs(chestShift(reg, 0, 1.1, .125, 0, .1) - .025) < 1e-7);
 });
+
+// Aesthetic reference (clinical teaching ratios): sternal notch-nipple-nipple equilateral triangle of
+// 18-21 cm, upper:lower pole 45:55 about the nipple, nipple-to-IMF 7-8 cm over the skin for a C cup.
+const goldOf = (cup, pt = 0) => {
+  PROFILE.cup = cup; PROFILE.ver++;
+  const p = { P: .064, shape: 'natural', pt }; const g = geomOf(p); const l = Math.hypot(.25, .05, 1), f = [.25 / l, -.05 / l, 1 / l];
+  const n = breastField(g.nU, g.nW, { ...p, g });
+  const nx = g.nU + .097 + f[0] * n.D + n.lat, ny = g.nW + 1.252 - n.drop + f[1] * n.D, nz = surface.frontZ(g.nU + .097) + f[2] * n.D;
+  let arc = 0, prev = null;
+  for (let dw = g.nW; dw > g.nW - .2; dw -= .001) {
+    const v = breastField(g.uN, dw, { ...p, g }); if (v.D <= .002) break;
+    const q = [dw - v.drop + f[1] * v.D, surface.frontZ(g.uN + .097) + f[2] * v.D]; if (prev) arc += Math.hypot(q[0] - prev[0], q[1] - prev[1]); prev = q;
+  }
+  return { sn: Math.hypot(nx, ny - 1.41, nz - .06), nn: 2 * nx, upper: surface.fieldPoleRatio(g, g.imf), arc };
+};
+
+test('upright breasts follow the aesthetic triangle and 45:55 pole ratio', () => {
+  for (const cup of ['B', 'C', 'D']) {
+    const r = goldOf(cup);
+    assert.ok(r.sn > .175 && r.sn < .21 && Math.abs(r.sn - r.nn) < .01, `${cup}: SN-N ${r.sn} N-N ${r.nn}`);
+    assert.ok(Math.abs(r.upper - .45) < .03, `${cup}: upper pole ${r.upper}`);
+  }
+  const c = goldOf('C'); assert.ok(c.arc > .07 && c.arc < .085, `C nipple-IMF ${c.arc}`);
+});
+
+test('ptosis lengthens the notch-nipple distance past the mastopexy threshold', () => {
+  const a = goldOf('C', 0), b = goldOf('C', 2), c = goldOf('C', 3);
+  assert.ok(a.sn < .21 && b.sn > .21 && c.sn > b.sn);
+  PROFILE.cup = 'C'; PROFILE.ver++;
+});

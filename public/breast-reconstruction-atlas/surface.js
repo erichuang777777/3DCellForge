@@ -128,14 +128,16 @@ const TMP = [0, 0, 0], TMP2 = [0, 0, 0];
 export function fieldShape(du, dw, g, ux) {
   const F = g.field;
   if (ux == null) { const x = du + F.cx; ux = unwrapX(x, frontZ(x)); }
-  const s = sampleField(ux - F.du0, dw + F.cy - F.dy0, F.w, TMP);
+  // 上下極比例:以乳頭基底為界,上方與下方各自縮放(上極 su 倍、下極 sl 倍),讓量出來的上下極比例等於設定值
+  const v = dw - g.wN, vs = v > 0 ? v / (F.su || 1) : v / (F.sl || 1);
+  const s = sampleField(ux - F.du0, g.wN + vs + F.cy - F.dy0, F.w, TMP);
   let D = s[0] * F.amp, drop = s[2] * F.amp;
   // 臨床下垂(重力):組織沿胸壁往下滑。有組織處滑最多,乳房下皺褶與上緣附著處歸零(邊界沿雕塑形狀本身的 U 形輪廓,
   // 不是一條水平線);下極越過皺褶往下垂
   if (F.S > 0) {
     // 組織權重用周圍 2.5 cm 的平均厚度:皮膚是連續的,乳房邊緣外也被連帶拉動,不會在邊緣出現剪切縫
-    const v = dw + F.cy - F.dy0, u = ux - F.du0; let Db = D;
-    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; Db += sampleField(u + 0.025 * Math.cos(a), v + 0.025 * Math.sin(a), F.w, TMP2)[0] * F.amp; }
+    const yy = g.wN + vs + F.cy - F.dy0, u = ux - F.du0; let Db = D;
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; Db += sampleField(u + 0.025 * Math.cos(a), yy + 0.025 * Math.sin(a), F.w, TMP2)[0] * F.amp; }
     // 胸側 12–17 cm 之間漸減到 0(再往外是手臂與變形區域邊界,不能被拉動)
     const tissue = smooth(0.001, 0.014, Db / 9) * (1 - smooth(0.12, 0.17, du + F.cx));
     const up = dw <= g.wN ? 0 : smooth(g.wN, F.top, dw);
@@ -170,4 +172,15 @@ export function fieldMetrics(g) {
   for (let du = g.uN; du < g.uN + 0.16; du += h) if (at(du, g.wN).D > 0.003) lat = du;
   const n = at(g.uN, g.wN);
   return { imf: crease.y, imfFoot: crease.foot, top, med, lat, nipD: n.D, nipDrop: n.drop, nipLat: n.lat };
+}
+
+// 乳頭經線的側面輪廓:上極比例 =(乳房上緣 − 乳頭)/(上緣 − 下極最低點或皺褶),與臨床側面照的量法相同
+export function fieldPoleRatio(g, imf) {
+  let top = -Infinity, low = Infinity; const n = fieldShape(g.uN, g.wN, g); const ny = g.wN - n.drop + FRAME_F[1] * n.D;
+  for (let dw = g.wN - 0.2; dw < g.wN + 0.2; dw += 0.002) {
+    const v = fieldShape(g.uN, dw, g); if (v.D <= 0.005) continue;
+    const y = dw - v.drop + FRAME_F[1] * v.D; if (dw > g.wN) top = Math.max(top, y); low = Math.min(low, y);
+  }
+  const bot = Math.min(low, imf ?? low);
+  return top > ny && ny > bot ? (top - ny) / (top - bot) : 0.5;
 }

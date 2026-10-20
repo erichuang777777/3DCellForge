@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { surfaceShape, implantEnvelopeShape, fieldShape, fieldMetrics, fieldWeights, fieldVolume, fieldPmax, cupForVolume, unwrapX, frontZ, MH_NIP } from './surface.js';
+import { surfaceShape, implantEnvelopeShape, fieldShape, fieldMetrics, fieldWeights, fieldVolume, fieldPmax, cupForVolume, unwrapX, frontZ, fieldPoleRatio, MH_NIP } from './surface.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SCENARIOS as BASE_SCENARIOS, END_STATES as BASE_END, COMPARE_DEFAULT, INFO, LAYER_NAMES, PERF_MAP } from './content.js';
@@ -400,7 +400,7 @@ const bmi = () => PROFILE.weight / (PROFILE.height / 100) ** 2;
 
 // 狀態中的乳房參數 + 病人條件 → 實際幾何。P、sc 為相對預設乳房的倍數;pt:絕對下垂程度(0–3);ptosis:相對病人的倍數
 const GEO = new Map();
-const NOTCH_Y = 1.41, C_X = 0.097, C_Y = 1.252; // 胸骨上切跡高度、乳房區域中心(模型座標)
+const NOTCH_Y = 1.41, NOTCH_Z = 0.06, C_X = 0.097, C_Y = 1.252; // 胸骨上切跡高度、乳房區域中心(模型座標)
 function geomOf(p) {
   const key = JSON.stringify([p.P, p.Pabs, p.sc, p.shape, p.lift, p.pt, p.ptosis, p.upper, p.ratio, p.implantEnvelope, PROFILE.ver]);
   let g = GEO.get(key); if (g) return g;
@@ -456,18 +456,25 @@ function naturalField(g, p, M, sc, lift) {
   const pp = clampN(g.pt * 2 / 3, 0, 2);
   const vol = cupVolume(M.d) * Math.pow((p.P ?? 0.064) / 0.064, 1.5) * sc ** 3;
   const { c, amp } = cupForVolume(vol, pp);
-  const field = { w: fieldWeights(c, pp), cx: C_X, cy: C_Y, du0: 0, dy0: lift, amp, S: 0 };
-  // 乳頭基底:罩杯快選用雕塑模型原本的位置(乳頭隨罩杯與下垂自然移動);量測模式讓看得到的乳頭落在量測位置
+  const field = { w: fieldWeights(c, pp), cx: C_X, cy: C_Y, du0: 0, dy0: lift, amp, S: 0, su: 1, sl: 1 };
   const t = { field, uN: MH_NIP.x - C_X, wN: MH_NIP.y - C_Y + lift };
-  if (PROFILE.mode === 'meas') {
-    const n = fieldShape(t.uN, t.wN, t);
-    const xV = M.nn / 200, yV = NOTCH_Y - Math.sqrt(Math.max((M.snn / 100) ** 2 - xV ** 2, 0.0025));
+  const c0 = cupForVolume(vol, 0);
+  const firm = { ...t, field: { ...field, w: fieldWeights(c0.c, 0), amp: c0.amp } };
+  // 上下極比例(乳頭為界;理想約 45:55):以緊實狀態量雕塑形狀原本的比例,再把上極、下極分別縮放到設定值
+  const r = clampN(p.ratio ?? PROFILE.ratio, 0.3, 0.6), r0 = fieldPoleRatio(firm, fieldMetrics(firm).imf);
+  field.su = clampN(r / r0, 0.6, 1.5); field.sl = clampN((1 - r) / (1 - r0), 0.6, 1.5);
+  // 乳頭位置:未下垂(緊實)時看得到的乳頭落在量測(或美學三角形)位置;下垂時乳頭再由形狀往下移。
+  // 胸骨上切跡到乳頭用立體直線距離,乳頭間距用左右距離
+  {
+    const n = fieldShape(t.uN, t.wN, { ...t, field: { ...field, w: fieldWeights(c0.c, 0), amp: c0.amp, S: 0 } });
+    const xV = M.nn / 200, zV = frontZ(xV) + f.z * n.D, dz = zV - NOTCH_Z;
+    const yV = NOTCH_Y - Math.sqrt(Math.max((M.snn / 100) ** 2 - xV ** 2 - dz ** 2, 0.0025));
     const xF = xV - (f.x * n.D + n.lat), yF = yV - (f.y * n.D - n.drop);
     field.du0 = unwrapX(xF, frontZ(xF)) - unwrapX(MH_NIP.x, frontZ(MH_NIP.x)); field.dy0 = yF - MH_NIP.y + lift;
     t.uN = xF - C_X; t.wN = yF - C_Y + lift;
   }
   // 乳房下皺褶是胸壁上固定的解剖標記:取同罩杯、緊實狀態的皺褶(重乳房垂到上腹時,看到的摺線會再低一些,但分級以固定標記為準)
-  const firm = { ...t, field: { ...field, w: fieldWeights(cupForVolume(vol, 0).c, 0), amp: cupForVolume(vol, 0).amp, S: 0 } };
+  Object.assign(firm, { uN: t.uN, wN: t.wN }); firm.field = { ...field, w: fieldWeights(c0.c, 0), amp: c0.amp, S: 0 };
   const mf = fieldMetrics(firm);
   const m0 = fieldMetrics(t); field.top = mf.top; field.imf0 = mf.imf;
   // 小罩杯的雕塑形狀鬆弛時下垂很少;不足的乳頭下降量才用重力補(大罩杯不需要,也就不會疊加)
@@ -2074,7 +2081,7 @@ function renderMeas() {
   const m = instances[0]?.meas; const v = m?.L || m?.R; if (!v) { $('pfMeas').textContent = ''; return; }
   const up = Math.round(v.up * 100); const d = -v.imf * 100; // 乳頭高於下皺褶為正
   const grade = d > 1 ? '無下垂' : d >= -1 ? '第一度下垂' : d >= -3 ? '第二度下垂' : '第三度下垂';
-  $('pfMeas').textContent = `模型目前:上極 ${up}%・下極 ${100 - up}%;乳頭${Math.abs(d) <= 1 ? '約在乳房下皺褶高度' : d > 0 ? `高於乳房下皺褶 ${d.toFixed(1)} cm` : `低於乳房下皺褶 ${(-d).toFixed(1)} cm`}(約${grade},Regnault 分級)。包絡積分粗估(非臨床量測)單側約 ${Math.round(estVolume() / 10) * 10} mL。`;
+  $('pfMeas').textContent = `模型目前:上極 ${up}%・下極 ${100 - up}%;乳頭${Math.abs(d) <= 1 ? '約在乳房下皺褶高度' : d > 0 ? `高於乳房下皺褶 ${d.toFixed(1)} cm` : `低於乳房下皺褶 ${(-d).toFixed(1)} cm`}(約${grade},Regnault 分級)。包絡積分粗估(非臨床量測)單側約 ${Math.round(estVolume() / 10) * 10} mL。理想上胸圍約身高 × 0.49–0.53(${Math.round(PROFILE.height * 0.49)}–${Math.round(PROFILE.height * 0.53)} cm,最多 × 0.59)。`;
 }
 function profileChanged() {
   PROFILE.ver++; GEO.clear();
