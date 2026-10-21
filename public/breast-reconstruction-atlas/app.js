@@ -598,7 +598,7 @@ function envelopePoint(inst, key, point, D, drop, lat = 0) {
 }
 
 // 皮膚網格當初是「頂」在肌肉與骨骼外面做成的,肋骨與肌肉起伏會印在皮膚上(像皮下脂肪很少)。
-// 載入時對軀幹做 Taubin 平滑(去掉小起伏但不縮小),再整體往外加約 4 mm 的皮下脂肪
+// 載入時對前胸與腹部做 Taubin 平滑(去掉小起伏但不縮小)。不另外往外加厚:局部加厚會改變「是否被前胸擋住」的判斷,讓側胸撕開
 function softenTorso(geometry) {
   const pos = geometry.attributes.position, n = pos.count, P = pos.array;
   // 重複頂點(法線接縫)合併成同一點,鄰接才不會斷開
@@ -613,7 +613,7 @@ function softenTorso(geometry) {
   const w = new Float32Array(n);
   for (const i of ids) {
     const x = Math.abs(P[i * 3]), y = P[i * 3 + 1];
-    w[i] = (1 - smooth(0.17, 0.21, x)) * smooth(0.82, 0.9, y) * (1 - smooth(1.36, 1.43, y));
+    w[i] = (1 - smooth(0.12, 0.155, x)) * smooth(0.82, 0.9, y) * (1 - smooth(1.36, 1.43, y)) * smooth(-0.02, 0.03, P[i * 3 + 2]); // 只處理前胸與腹部:側胸與手臂相連,平滑會把兩邊拉扯成摺痕
   }
   const step = (lam) => {
     const d = new Float32Array(n * 3);
@@ -625,10 +625,6 @@ function softenTorso(geometry) {
     for (const i of ids) { P[i * 3] += d[i * 3]; P[i * 3 + 1] += d[i * 3 + 1]; P[i * 3 + 2] += d[i * 3 + 2]; }
   };
   for (let it = 0; it < 24; it++) { step(0.5); step(-0.53); }
-  // 皮下脂肪:沿法線往外 4 mm
-  geometry.computeVertexNormals(); const N = geometry.attributes.normal.array;
-  const nrm = new Float32Array(n * 3); for (let i = 0; i < n; i++) { const c = canon[i]; nrm[c * 3] += N[i * 3]; nrm[c * 3 + 1] += N[i * 3 + 1]; nrm[c * 3 + 2] += N[i * 3 + 2]; }
-  for (const i of ids) { const l = Math.hypot(nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]) || 1; for (let c = 0; c < 3; c++) P[i * 3 + c] += 0.004 * w[i] * nrm[i * 3 + c] / l; }
   for (let i = 0; i < n; i++) if (canon[i] !== i) { const c = canon[i]; P[i * 3] = P[c * 3]; P[i * 3 + 1] = P[c * 3 + 1]; P[i * 3 + 2] = P[c * 3 + 2]; }
   pos.needsUpdate = true; geometry.computeVertexNormals(); geometry.computeBoundingSphere();
 }
