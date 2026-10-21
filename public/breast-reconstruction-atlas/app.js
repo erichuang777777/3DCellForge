@@ -440,8 +440,8 @@ function geomOf(p) {
   if (GEO.size > 400) GEO.clear();
   GEO.set(key, g); return g;
 }
-// 罩杯(上下胸圍差,cm)→ 單側體積(mL,模型尺寸)。教學用的近似對照,可再依文獻或臨床經驗調整
-const CUP_VOL = [[10, 220], [12.5, 320], [15, 430], [17.5, 550], [20, 680], [22.5, 820], [25, 980]];
+// 罩杯(上下胸圍差,cm)→ 單側體積(mL,模型尺寸)。教學用的近似對照
+const CUP_VOL = [[10, 150], [12.5, 275], [15, 400], [17.5, 525], [20, 650], [22.5, 775], [25, 900]]; // 醫師提供:A 約 150 mL、E 約 650 mL,每級約 125 mL
 function cupVolume(d) {
   if (d <= CUP_VOL[0][0]) return CUP_VOL[0][1] * Math.pow(Math.max(d, 1) / CUP_VOL[0][0], 1.5);
   for (let i = 1; i < CUP_VOL.length; i++) if (d <= CUP_VOL[i][0]) { const [d0, v0] = CUP_VOL[i - 1], [d1, v1] = CUP_VOL[i]; return v0 + (v1 - v0) * (d - d0) / (d1 - d0); }
@@ -639,8 +639,10 @@ function prepBreastRegions(skinGeom) {
         for (let k = 0; k < wtN.length; k++) if (nb[k].length) { let m = 0; for (const q of nb[k]) m += wtN[q]; nx[k] = 0.5 * wtN[k] + 0.5 * m / nb[k].length; }
         for (let k = 0; k < wtN.length; k++) wtN[k] = nx[k];
       }
+      var nbOff = new Int32Array(idx.length + 1); for (let k = 0; k < idx.length; k++) nbOff[k + 1] = nbOff[k] + nb[k].length;
+      var nbIdx = new Int32Array(nbOff[idx.length]); for (let k = 0; k < idx.length; k++) nbIdx.set(nb[k], nbOff[k]);
     }
-    regions[key] = { s, c, chestAt, idx: Int32Array.from(idx), du: Float32Array.from(du), dw: Float32Array.from(dw), wt: Float32Array.from(wt), wrapWt: Float32Array.from(wrapWt), wtN: Float32Array.from(wtN), ux: Float32Array.from(ux), frame: sideFrame(s) };
+    regions[key] = { s, c, chestAt, idx: Int32Array.from(idx), du: Float32Array.from(du), dw: Float32Array.from(dw), wt: Float32Array.from(wt), wrapWt: Float32Array.from(wrapWt), wtN: Float32Array.from(wtN), ux: Float32Array.from(ux), nbOff, nbIdx, frame: sideFrame(s) };
   }
   return regions;
 }
@@ -1522,7 +1524,8 @@ function updateBreasts(inst, s) {
     }
     const [nu, nw] = [g.nU + (p.nsu || 0), g.nW + (p.nsw || 0)];
     let maxD = -1, maxI = -1; let top = -1e9, low = 1e9;
-    for (let j = 0; j < reg.idx.length; j++) {
+    const nV = reg.idx.length, disp = new Float32Array(nV * 3), Dj = new Float32Array(nV);
+    for (let j = 0; j < nV; j++) {
       const i = reg.idx[j]; const wk = p.implantEnvelope ? reg.wrapWt[j] : g.field ? reg.wtN[j] : reg.wt[j]; if (p.implantEnvelope && wk <= 0) continue;
       let { D, drop, lat } = breastField(reg.du[j], reg.dw[j], p, reg.ux[j]); D *= wk; drop *= wk; lat = (lat || 0) * wk;
       if (thin) { D = wrap(i) * wk + nipBump(reg.du[j], reg.dw[j], p, g) * smooth(.002, .01, wrap(i)); drop = 0; }
@@ -1532,7 +1535,20 @@ function updateBreasts(inst, s) {
       const [bu, bw] = thin ? [0, 0] : bulgeOf(reg.du[j], reg.dw[j], D, g, p.implantEnvelope).map((v) => v * fz);
       const dx = f.x * D + reg.s * (bu + (thin || wrap ? 0 : lat)), dy = f.y * D - drop + bw; // 雕塑形狀的側向位移是逐點資料,側胸也要完整套用
       const dz = thin || wrap ? 0 : chestShift(reg, base[i * 3], base[i * 3 + 1], base[i * 3 + 2], dx, dy);
-      arr[i * 3] += dx; arr[i * 3 + 1] += dy; arr[i * 3 + 2] += f.z * D + dz;
+      disp[j * 3] = dx; disp[j * 3 + 1] = dy; disp[j * 3 + 2] = f.z * D + dz; Dj[j] = D;
+    }
+    // 自然乳房:位移沿網格鄰居平滑兩次(消除位移場與網格疏密造成的細小折面,皮膚看起來是連續的一整片)
+    if (g.field && !wrap && !thin) for (let it = 0; it < 2; it++) {
+      const src = disp.slice();
+      for (let j = 0; j < nV; j++) {
+        const o0 = reg.nbOff[j], o1 = reg.nbOff[j + 1]; if (o1 === o0) continue;
+        let sx = 0, sy = 0, sz = 0; for (let o = o0; o < o1; o++) { const q = reg.nbIdx[o] * 3; sx += src[q]; sy += src[q + 1]; sz += src[q + 2]; }
+        const n = o1 - o0; disp[j * 3] = 0.5 * src[j * 3] + 0.5 * sx / n; disp[j * 3 + 1] = 0.5 * src[j * 3 + 1] + 0.5 * sy / n; disp[j * 3 + 2] = 0.5 * src[j * 3 + 2] + 0.5 * sz / n;
+      }
+    }
+    for (let j = 0; j < nV; j++) {
+      const i = reg.idx[j], D = Dj[j];
+      arr[i * 3] += disp[j * 3]; arr[i * 3 + 1] += disp[j * 3 + 1]; arr[i * 3 + 2] += disp[j * 3 + 2];
       const dn = (reg.du[j] - nu) ** 2 + (reg.dw[j] - nw) ** 2;
       if (D > 0.01 && dn < 0.0004 && D - dn * 20 > maxD) { maxD = D - dn * 20; maxI = i; }
       if (Math.abs(reg.du[j] - nu) < 0.012 && g.P > 0.01) { const y = arr[i * 3 + 1]; if (D > 0.33 * g.P && y > top) top = y; if (D > 0.05 * g.P && y < low) low = y; }
