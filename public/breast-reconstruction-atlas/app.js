@@ -441,7 +441,7 @@ function geomOf(p) {
   GEO.set(key, g); return g;
 }
 // 罩杯(上下胸圍差,cm)→ 單側體積(mL,模型尺寸)。教學用的近似對照
-const CUP_VOL = [[10, 150], [12.5, 275], [15, 400], [17.5, 525], [20, 650], [22.5, 775], [25, 900]]; // 醫師提供:A 約 150 mL、E 約 650 mL,每級約 125 mL
+const CUP_VOL = [[10, 200], [12.5, 350], [15, 500], [17.5, 650], [20, 800], [22.5, 950], [25, 1100]]; // 醫師提供:A 約 200、C 約 500、D 約 650、F 約 950 mL,每級約 150 mL
 function cupVolume(d) {
   if (d <= CUP_VOL[0][0]) return CUP_VOL[0][1] * Math.pow(Math.max(d, 1) / CUP_VOL[0][0], 1.5);
   for (let i = 1; i < CUP_VOL.length; i++) if (d <= CUP_VOL[i][0]) { const [d0, v0] = CUP_VOL[i - 1], [d1, v1] = CUP_VOL[i]; return v0 + (v1 - v0) * (d - d0) / (d1 - d0); }
@@ -595,6 +595,42 @@ function envelopePoint(inst, key, point, D, drop, lat = 0) {
   const dx = f.x * D + reg.s * lat, dy = f.y * D - drop;
   const dz = inst.envelopeMode?.[key] ? 0 : chestShift(reg, point.x, point.y, point.z, dx, dy);
   return point.add(new THREE.Vector3(dx, dy, f.z * D + dz));
+}
+
+// 皮膚網格當初是「頂」在肌肉與骨骼外面做成的,肋骨與肌肉起伏會印在皮膚上(像皮下脂肪很少)。
+// 載入時對軀幹做 Taubin 平滑(去掉小起伏但不縮小),再整體往外加約 4 mm 的皮下脂肪
+function softenTorso(geometry) {
+  const pos = geometry.attributes.position, n = pos.count, P = pos.array;
+  // 重複頂點(法線接縫)合併成同一點,鄰接才不會斷開
+  const keyOf = (i) => `${Math.round(P[i * 3] * 1e5)},${Math.round(P[i * 3 + 1] * 1e5)},${Math.round(P[i * 3 + 2] * 1e5)}`;
+  const canon = new Int32Array(n), first = new Map();
+  for (let i = 0; i < n; i++) { const k = keyOf(i); if (!first.has(k)) first.set(k, i); canon[i] = first.get(k); }
+  const nb = new Map(); const idx = geometry.index ? geometry.index.array : null; if (!idx) return;
+  const link = (a, b) => { if (a === b) return; if (!nb.has(a)) nb.set(a, new Set()); nb.get(a).add(b); };
+  for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { const a = canon[idx[t + e]], b = canon[idx[t + (e + 1) % 3]]; link(a, b); link(b, a); }
+  const ids = [...nb.keys()];
+  // 只處理軀幹(胸、腹、背;不含手臂與頸部),邊界漸減
+  const w = new Float32Array(n);
+  for (const i of ids) {
+    const x = Math.abs(P[i * 3]), y = P[i * 3 + 1];
+    w[i] = (1 - smooth(0.17, 0.21, x)) * smooth(0.82, 0.9, y) * (1 - smooth(1.36, 1.43, y));
+  }
+  const step = (lam) => {
+    const d = new Float32Array(n * 3);
+    for (const i of ids) {
+      if (w[i] <= 0) continue; const s = nb.get(i); let cx = 0, cy = 0, cz = 0;
+      for (const j of s) { cx += P[j * 3]; cy += P[j * 3 + 1]; cz += P[j * 3 + 2]; }
+      const k = s.size; d[i * 3] = (cx / k - P[i * 3]) * lam * w[i]; d[i * 3 + 1] = (cy / k - P[i * 3 + 1]) * lam * w[i]; d[i * 3 + 2] = (cz / k - P[i * 3 + 2]) * lam * w[i];
+    }
+    for (const i of ids) { P[i * 3] += d[i * 3]; P[i * 3 + 1] += d[i * 3 + 1]; P[i * 3 + 2] += d[i * 3 + 2]; }
+  };
+  for (let it = 0; it < 24; it++) { step(0.5); step(-0.53); }
+  // 皮下脂肪:沿法線往外 4 mm
+  geometry.computeVertexNormals(); const N = geometry.attributes.normal.array;
+  const nrm = new Float32Array(n * 3); for (let i = 0; i < n; i++) { const c = canon[i]; nrm[c * 3] += N[i * 3]; nrm[c * 3 + 1] += N[i * 3 + 1]; nrm[c * 3 + 2] += N[i * 3 + 2]; }
+  for (const i of ids) { const l = Math.hypot(nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]) || 1; for (let c = 0; c < 3; c++) P[i * 3 + c] += 0.004 * w[i] * nrm[i * 3 + c] / l; }
+  for (let i = 0; i < n; i++) if (canon[i] !== i) { const c = canon[i]; P[i * 3] = P[c * 3]; P[i * 3 + 1] = P[c * 3 + 1]; P[i * 3 + 2] = P[c * 3 + 2]; }
+  pos.needsUpdate = true; geometry.computeVertexNormals(); geometry.computeBoundingSphere();
 }
 
 function prepBreastRegions(skinGeom) {
@@ -2443,7 +2479,7 @@ async function boot() {
     meshes.push({ name: o.name || o.parent?.name, geometry: g });
   });
   const skin = meshes.find((m) => m.name === 'skin');
-  if (skin) flattenMaleNipples(skin.geometry);
+  if (skin) { flattenMaleNipples(skin.geometry); softenTorso(skin.geometry); }
   // 上臂皮膚只到手肘上方:截掉露出皮膚外的肱骨遠端
   const arm = meshes.find((m) => m.name === 'skin_arm');
   if (arm) for (const sd of [-1, 1]) {
