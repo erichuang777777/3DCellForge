@@ -600,29 +600,35 @@ function envelopePoint(inst, key, point, D, drop, lat = 0) {
 // 皮膚網格當初是「頂」在肌肉與骨骼外面做成的,肋骨與肌肉起伏會印在皮膚上(像皮下脂肪很少)。
 // 載入時對前胸與腹部做 Taubin 平滑(去掉小起伏但不縮小)。不另外往外加厚:局部加厚會改變「是否被前胸擋住」的判斷,讓側胸撕開
 function softenTorso(geometry) {
-  const pos = geometry.attributes.position, n = pos.count, P = pos.array;
-  // 重複頂點(法線接縫)合併成同一點,鄰接才不會斷開
-  const keyOf = (i) => `${Math.round(P[i * 3] * 1e5)},${Math.round(P[i * 3 + 1] * 1e5)},${Math.round(P[i * 3 + 2] * 1e5)}`;
-  const canon = new Int32Array(n), first = new Map();
-  for (let i = 0; i < n; i++) { const k = keyOf(i); if (!first.has(k)) first.set(k, i); canon[i] = first.get(k); }
-  const nb = new Map(); const idx = geometry.index ? geometry.index.array : null; if (!idx) return;
-  const link = (a, b) => { if (a === b) return; if (!nb.has(a)) nb.set(a, new Set()); nb.get(a).add(b); };
-  for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { const a = canon[idx[t + e]], b = canon[idx[t + (e + 1) % 3]]; link(a, b); link(b, a); }
-  const ids = [...nb.keys()];
-  // 只處理軀幹(胸、腹、背;不含手臂與頸部),邊界漸減
-  const w = new Float32Array(n);
-  for (const i of ids) {
+  const pos = geometry.attributes.position, n = pos.count, P = pos.array; const idx = geometry.index ? geometry.index.array : null; if (!idx) return;
+  // 重複頂點(法線接縫)合併成同一點:依量化座標排序後相鄰比對(只用型別陣列,手機記憶體才夠)
+  const q = new Int32Array(n * 3); for (let i = 0; i < n * 3; i++) q[i] = Math.round(P[i] * 1e5);
+  const ord = new Uint32Array(n); for (let i = 0; i < n; i++) ord[i] = i;
+  ord.sort((a, b) => q[a * 3] - q[b * 3] || q[a * 3 + 1] - q[b * 3 + 1] || q[a * 3 + 2] - q[b * 3 + 2]);
+  const canon = new Int32Array(n);
+  for (let k = 0; k < n; k++) { const i = ord[k], p = k ? ord[k - 1] : -1; canon[i] = p >= 0 && q[i * 3] === q[p * 3] && q[i * 3 + 1] === q[p * 3 + 1] && q[i * 3 + 2] === q[p * 3 + 2] ? canon[p] : i; }
+  // 鄰接表(CSR)
+  const deg = new Int32Array(n + 1);
+  for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { const a = canon[idx[t + e]], b = canon[idx[t + (e + 1) % 3]]; if (a !== b) { deg[a + 1]++; deg[b + 1]++; } }
+  for (let i = 0; i < n; i++) deg[i + 1] += deg[i];
+  const adj = new Int32Array(deg[n]), fill = deg.slice(0, n);
+  for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { const a = canon[idx[t + e]], b = canon[idx[t + (e + 1) % 3]]; if (a !== b) { adj[fill[a]++] = b; adj[fill[b]++] = a; } }
+  // 只處理前胸與腹部:側胸與手臂相連,平滑會把兩邊拉扯成摺痕
+  const w = new Float32Array(n); let m = 0; const act = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    if (canon[i] !== i || deg[i + 1] === deg[i]) continue;
     const x = Math.abs(P[i * 3]), y = P[i * 3 + 1];
-    w[i] = (1 - smooth(0.12, 0.155, x)) * smooth(0.82, 0.9, y) * (1 - smooth(1.36, 1.43, y)) * smooth(-0.02, 0.03, P[i * 3 + 2]); // 只處理前胸與腹部:側胸與手臂相連,平滑會把兩邊拉扯成摺痕
+    w[i] = (1 - smooth(0.12, 0.155, x)) * smooth(0.82, 0.9, y) * (1 - smooth(1.36, 1.43, y)) * smooth(-0.02, 0.03, P[i * 3 + 2]);
+    if (w[i] > 0) act[m++] = i;
   }
+  const d = new Float32Array(n * 3);
   const step = (lam) => {
-    const d = new Float32Array(n * 3);
-    for (const i of ids) {
-      if (w[i] <= 0) continue; const s = nb.get(i); let cx = 0, cy = 0, cz = 0;
-      for (const j of s) { cx += P[j * 3]; cy += P[j * 3 + 1]; cz += P[j * 3 + 2]; }
-      const k = s.size; d[i * 3] = (cx / k - P[i * 3]) * lam * w[i]; d[i * 3 + 1] = (cy / k - P[i * 3 + 1]) * lam * w[i]; d[i * 3 + 2] = (cz / k - P[i * 3 + 2]) * lam * w[i];
+    for (let k = 0; k < m; k++) {
+      const i = act[k]; let cx = 0, cy = 0, cz = 0; const o0 = deg[i], o1 = deg[i + 1];
+      for (let o = o0; o < o1; o++) { const j = adj[o] * 3; cx += P[j]; cy += P[j + 1]; cz += P[j + 2]; }
+      const c = lam * w[i] / (o1 - o0); d[i * 3] = (cx - (o1 - o0) * P[i * 3]) * c; d[i * 3 + 1] = (cy - (o1 - o0) * P[i * 3 + 1]) * c; d[i * 3 + 2] = (cz - (o1 - o0) * P[i * 3 + 2]) * c;
     }
-    for (const i of ids) { P[i * 3] += d[i * 3]; P[i * 3 + 1] += d[i * 3 + 1]; P[i * 3 + 2] += d[i * 3 + 2]; }
+    for (let k = 0; k < m; k++) { const i = act[k]; P[i * 3] += d[i * 3]; P[i * 3 + 1] += d[i * 3 + 1]; P[i * 3 + 2] += d[i * 3 + 2]; }
   };
   for (let it = 0; it < 24; it++) { step(0.5); step(-0.53); }
   for (let i = 0; i < n; i++) if (canon[i] !== i) { const c = canon[i]; P[i * 3] = P[c * 3]; P[i * 3 + 1] = P[c * 3 + 1]; P[i * 3 + 2] = P[c * 3 + 2]; }
@@ -660,21 +666,19 @@ function prepBreastRegions(skinGeom) {
       idx.push(i); du.push(a); dw.push(b); wt.push((1 - smooth(0.001, 0.006, frontGap)) * smooth(0.0, 0.035, z) * (1 - smooth(0.165, 0.19, Math.abs(x))) * (1 - smooth(0.75, 1.2, patchR2))); // 腋下邊界前漸減,避免出現台階
     }
     // 自然乳房的權重沿網格鄰居平滑:腋下附近被遮住的頂點(權重 0)和旁邊的頂點(權重 1)之間,大位移時才不會撕開
-    {
-      const local = new Map(idx.map((v, k) => [v, k])); const nb = idx.map(() => []); const ia = skinGeom.index.array;
-      for (let t = 0; t < ia.length; t += 3) for (let e = 0; e < 3; e++) {
-        const p = local.get(ia[t + e]), q = local.get(ia[t + (e + 1) % 3]);
-        if (p !== undefined && q !== undefined) { nb[p].push(q); nb[q].push(p); }
-      }
-      for (let it = 0; it < 6; it++) {
-        const nx = wtN.slice();
-        for (let k = 0; k < wtN.length; k++) if (nb[k].length) { let m = 0; for (const q of nb[k]) m += wtN[q]; nx[k] = 0.5 * wtN[k] + 0.5 * m / nb[k].length; }
-        for (let k = 0; k < wtN.length; k++) wtN[k] = nx[k];
-      }
-      var nbOff = new Int32Array(idx.length + 1); for (let k = 0; k < idx.length; k++) nbOff[k + 1] = nbOff[k] + nb[k].length;
-      var nbIdx = new Int32Array(nbOff[idx.length]); for (let k = 0; k < idx.length; k++) nbIdx.set(nb[k], nbOff[k]);
+    // 鄰接表用 CSR(型別陣列),手機記憶體才夠
+    const nL = idx.length, local = new Int32Array(pos.count).fill(-1); for (let k = 0; k < nL; k++) local[idx[k]] = k;
+    const ia = skinGeom.index.array; const nbOff = new Int32Array(nL + 1);
+    for (let t = 0; t < ia.length; t += 3) for (let e = 0; e < 3; e++) { const p = local[ia[t + e]], q = local[ia[t + (e + 1) % 3]]; if (p >= 0 && q >= 0) { nbOff[p + 1]++; nbOff[q + 1]++; } }
+    for (let k = 0; k < nL; k++) nbOff[k + 1] += nbOff[k];
+    const nbIdx = new Int32Array(nbOff[nL]), fill = nbOff.slice(0, nL);
+    for (let t = 0; t < ia.length; t += 3) for (let e = 0; e < 3; e++) { const p = local[ia[t + e]], q = local[ia[t + (e + 1) % 3]]; if (p >= 0 && q >= 0) { nbIdx[fill[p]++] = q; nbIdx[fill[q]++] = p; } }
+    const wN = Float32Array.from(wtN), tmp = new Float32Array(nL);
+    for (let it = 0; it < 6; it++) {
+      for (let k = 0; k < nL; k++) { const o0 = nbOff[k], o1 = nbOff[k + 1]; if (o1 === o0) { tmp[k] = wN[k]; continue; } let s2 = 0; for (let o = o0; o < o1; o++) s2 += wN[nbIdx[o]]; tmp[k] = 0.5 * wN[k] + 0.5 * s2 / (o1 - o0); }
+      wN.set(tmp);
     }
-    regions[key] = { s, c, chestAt, idx: Int32Array.from(idx), du: Float32Array.from(du), dw: Float32Array.from(dw), wt: Float32Array.from(wt), wrapWt: Float32Array.from(wrapWt), wtN: Float32Array.from(wtN), ux: Float32Array.from(ux), nbOff, nbIdx, frame: sideFrame(s) };
+    regions[key] = { s, c, chestAt, idx: Int32Array.from(idx), du: Float32Array.from(du), dw: Float32Array.from(dw), wt: Float32Array.from(wt), wrapWt: Float32Array.from(wrapWt), wtN: wN, ux: Float32Array.from(ux), nbOff, nbIdx, frame: sideFrame(s) };
   }
   return regions;
 }
