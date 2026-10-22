@@ -618,7 +618,10 @@ function softenTorso(geometry) {
   for (let i = 0; i < n; i++) {
     if (canon[i] !== i || deg[i + 1] === deg[i]) continue;
     const x = Math.abs(P[i * 3]), y = P[i * 3 + 1];
-    w[i] = (1 - smooth(0.12, 0.155, x)) * smooth(0.82, 0.9, y) * (1 - smooth(1.36, 1.43, y)) * smooth(-0.02, 0.03, P[i * 3 + 2]);
+    const front = (1 - smooth(0.12, 0.155, x)) * smooth(0.82, 0.9, y) * (1 - smooth(1.36, 1.43, y)) * smooth(-0.02, 0.03, P[i * 3 + 2]);
+    // 側胸:只做腋下高度以下、軀幹側面之內(手臂在更外側,腋窩在更高處,都不碰)
+    const side = smooth(0.1, 0.13, x) * (1 - smooth(0.16, 0.172, x)) * smooth(0.86, 0.93, y) * (1 - smooth(1.17, 1.23, y)) * smooth(-0.07, -0.03, P[i * 3 + 2]);
+    w[i] = Math.max(front, side);
     if (w[i] > 0) act[m++] = i;
   }
   const d = new Float32Array(n * 3);
@@ -630,7 +633,7 @@ function softenTorso(geometry) {
     }
     for (let k = 0; k < m; k++) { const i = act[k]; P[i * 3] += d[i * 3]; P[i * 3 + 1] += d[i * 3 + 1]; P[i * 3 + 2] += d[i * 3 + 2]; }
   };
-  for (let it = 0; it < 24; it++) { step(0.5); step(-0.53); }
+  for (let it = 0; it < 60; it++) { step(0.5); step(-0.53); }
   for (let i = 0; i < n; i++) if (canon[i] !== i) { const c = canon[i]; P[i * 3] = P[c * 3]; P[i * 3 + 1] = P[c * 3 + 1]; P[i * 3 + 2] = P[c * 3 + 2]; }
   pos.needsUpdate = true; geometry.computeVertexNormals(); geometry.computeBoundingSphere();
 }
