@@ -597,6 +597,38 @@ function envelopePoint(inst, key, point, D, drop, lat = 0) {
   return point.add(new THREE.Vector3(dx, dy, f.z * D + dz));
 }
 
+// 上臂內側原本貼著側胸,手臂輪廓壓在側胸上像拼接痕。載入時把手臂稍微外展(約 5°),只移動腋下以下、跟手肘相連的頂點
+function abductArms(geometry, deg = 6, Y0 = 1.15) {
+  const pos = geometry.attributes.position, n = pos.count, P = pos.array; const idx = geometry.index ? geometry.index.array : null; if (!idx) return;
+  const q = new Int32Array(n * 3); for (let i = 0; i < n * 3; i++) q[i] = Math.round(P[i] * 1e5);
+  const ord = new Uint32Array(n); for (let i = 0; i < n; i++) ord[i] = i;
+  ord.sort((a, b) => q[a * 3] - q[b * 3] || q[a * 3 + 1] - q[b * 3 + 1] || q[a * 3 + 2] - q[b * 3 + 2]);
+  const canon = new Int32Array(n);
+  for (let k = 0; k < n; k++) { const i = ord[k], p = k ? ord[k - 1] : -1; canon[i] = p >= 0 && q[i * 3] === q[p * 3] && q[i * 3 + 1] === q[p * 3 + 1] && q[i * 3 + 2] === q[p * 3 + 2] ? canon[p] : i; }
+  // Y0:手臂與軀幹在腋窩(約 1.15 m 以上)相連,只移動以下的部分
+  const deg1 = new Int32Array(n + 1);
+  const ok = (v) => P[v * 3 + 1] < Y0;
+  for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { const a = canon[idx[t + e]], b = canon[idx[t + (e + 1) % 3]]; if (a !== b && ok(a) && ok(b)) { deg1[a + 1]++; deg1[b + 1]++; } }
+  for (let i = 0; i < n; i++) deg1[i + 1] += deg1[i];
+  const adj = new Int32Array(deg1[n]), fill = deg1.slice(0, n);
+  for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { const a = canon[idx[t + e]], b = canon[idx[t + (e + 1) % 3]]; if (a !== b && ok(a) && ok(b)) { adj[fill[a]++] = b; adj[fill[b]++] = a; } }
+  for (const s of [-1, 1]) {
+    // 種子:腰部高度、明顯在軀幹外側的頂點(只會是上臂)
+    const arm = new Uint8Array(n), stack = [];
+    for (let i = 0; i < n; i++) if (canon[i] === i && P[i * 3] * s > 0.2 && P[i * 3 + 1] < 1.12 && P[i * 3 + 1] > 1.0) { arm[i] = 1; stack.push(i); }
+    while (stack.length) { const i = stack.pop(); for (let o = deg1[i]; o < deg1[i + 1]; o++) { const j = adj[o]; if (!arm[j]) { arm[j] = 1; stack.push(j); } } }
+    // 若一路連到軀幹(超過中線附近),代表腋窩以下手臂與軀幹相連,放棄外展避免撕裂
+    let leak = false; for (let i = 0; i < n; i++) if (arm[i] && P[i * 3] * s < 0.09) { leak = true; break; }
+    if (leak) continue;
+    const px = 0.175 * s, py = 1.36;
+    for (let i = 0; i < n; i++) {
+      const c = canon[i]; if (!arm[c]) continue;
+      const x = P[i * 3], y = P[i * 3 + 1]; const w = smooth(Y0, Y0 - 0.12, y); const th = s * deg * Math.PI / 180 * w;
+      const dx = x - px, dy = y - py; P[i * 3] = px + dx * Math.cos(th) - dy * Math.sin(th); P[i * 3 + 1] = py + dx * Math.sin(th) + dy * Math.cos(th);
+    }
+  }
+  pos.needsUpdate = true; geometry.computeVertexNormals(); geometry.computeBoundingSphere();
+}
 // 皮膚網格當初是「頂」在肌肉與骨骼外面做成的,肋骨與肌肉起伏會印在皮膚上(像皮下脂肪很少)。
 // 載入時對前胸與腹部做 Taubin 平滑(去掉小起伏但不縮小)。不另外往外加厚:局部加厚會改變「是否被前胸擋住」的判斷,讓側胸撕開
 function softenTorso(geometry) {
@@ -2482,7 +2514,7 @@ async function boot() {
     meshes.push({ name: o.name || o.parent?.name, geometry: g });
   });
   const skin = meshes.find((m) => m.name === 'skin');
-  if (skin) { flattenMaleNipples(skin.geometry); softenTorso(skin.geometry); }
+  if (skin) { flattenMaleNipples(skin.geometry); abductArms(skin.geometry); softenTorso(skin.geometry); }
   // 上臂皮膚只到手肘上方:截掉露出皮膚外的肱骨遠端
   const arm = meshes.find((m) => m.name === 'skin_arm');
   if (arm) for (const sd of [-1, 1]) {
