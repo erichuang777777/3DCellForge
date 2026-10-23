@@ -131,7 +131,9 @@ export function fieldShape(du, dw, g, ux) {
   // 上下極比例:以乳頭基底為界,上方與下方各自縮放(上極 su 倍、下極 sl 倍),讓量出來的上下極比例等於設定值
   const v = dw - g.wN, vs = v > 0 ? v / (F.su || 1) : v / (F.sl || 1);
   const s = sampleField(ux - F.du0, g.wN + vs + F.cy - F.dy0, F.w, TMP);
-  let D = s[0] * F.amp, drop = s[2] * F.amp;
+  // 中線兩側分攤:依皮膚點離模型實際中線的距離(左右兩側合計永遠是 100%,中線不會被重複拉扯或漏掉)
+  const xm = du + F.cx, half = smooth(-0.012, 0.012, xm);
+  let D = s[0] * F.amp * half, drop = s[2] * F.amp * half;
   // 臨床下垂(重力):組織沿胸壁往下滑。有組織處滑最多,乳房下皺褶與上緣附著處歸零(邊界沿雕塑形狀本身的 U 形輪廓,
   // 不是一條水平線);下極越過皺褶往下垂
   if (F.S > 0) {
@@ -139,7 +141,8 @@ export function fieldShape(du, dw, g, ux) {
     const yy = g.wN + vs + F.cy - F.dy0, u = ux - F.du0; let Db = D;
     for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; Db += sampleField(u + 0.025 * Math.cos(a), yy + 0.025 * Math.sin(a), F.w, TMP2)[0] * F.amp; }
     // 胸側 12–17 cm 之間漸減到 0(再往外是手臂與變形區域邊界,不能被拉動)
-    const tissue = smooth(0.001, 0.014, Db / 9) * (1 - smooth(0.12, 0.17, du + F.cx));
+    // 過了中線漸減到 0:兩側的下垂不能疊在胸骨前同一塊皮膚上(會擠出夾縫)
+    const tissue = smooth(0.001, 0.014, Db / 9) * (1 - smooth(0.12, 0.17, du + F.cx)) * smooth(-0.01, 0.015, du + F.cx);
     const up = dw <= g.wN ? 0 : smooth(g.wN, F.top, dw);
     const g0 = F.S * tissue * (1 - 0.85 * up);
     drop += g0;
@@ -152,6 +155,8 @@ export function fieldShape(du, dw, g, ux) {
     const below = F.imf0 - (dw - drop + FRAME_F[1] * D);
     if (below > 0) D += 0.6 * Math.min(below, g0);
   }
+  // 雕塑形狀在乳房下方會把皮膚往內拉(D < 0),外插時被放大;最多 3 mm,不能把皮膚拉到肌肉後面
+  if (D < -0.003) D = -0.003;
   // 乳房與胸壁交接處做約 4 mm 的圓角:厚度從 0 平順長出,乳房下皺褶不會變成銳利的摺線
   if (D > 0) D = Math.sqrt(D * D + 0.004 * 0.004) - 0.004;
   // 隆乳假體:貼在胸壁上的圓頂,把原本的組織整個往前推(厚度相加);邊緣由覆蓋的組織緩和
@@ -163,7 +168,10 @@ export function fieldShape(du, dw, g, ux) {
       D += I.P * Math.min(lowW, 1.15) * dome;
     }
   }
-  return { D, lat: s[1] * F.amp, drop };
+  // 往內(中線方向)的側向位移不能越過中線:最多走到自己離中線距離的 80%(外插時兩側皮膚才不會擠成夾縫)
+  let lat = s[1] * F.amp * half;
+  if (lat < 0) lat = Math.max(lat, -0.8 * Math.max(xm - 0.003, 0));
+  return { D, lat, drop };
 }
 // 由位移場量出外形:看得到的乳房下皺褶(沿乳頭經線,皮膚離開胸壁、或往下翻折的位置)、上緣、內外緣
 export function fieldMetrics(g) {

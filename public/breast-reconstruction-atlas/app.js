@@ -379,8 +379,9 @@ const CUP_D = { A: 10, B: 12.5, C: 15, D: 17.5, E: 20, F: 22.5 };
 const cupOf = (d) => { const ks = Object.keys(CUP_D); let best = ks[0]; for (const k of ks) if (Math.abs(CUP_D[k] - d) < Math.abs(CUP_D[best] - d)) best = k; return d < 8.75 ? 'AA' : d > 23.75 ? 'G+' : best; };
 // 預設略為美化(較挺、上半部較飽滿),讓病人看到的外形有心理支持;仍可在面板調整
 // 預設為「挺」的理想外形(衛教的心理支持);年齡選項才帶入下垂
-const AGE_DEF = { ideal: { pt: 0, full: 0.85 }, y: { pt: 0.3, full: 0.7 }, m: { pt: 0.6, full: 0.6 }, o: { pt: 1.2, full: 0.45 }, e: { pt: 1.8, full: 0.35 } };
-const PROFILE = { mode: 'cup', cup: 'C', age: 'ideal', pt: 0, ratio: 0.45, full: 0.85, ver: 0,
+// 年齡只帶入常見的下垂分級(Regnault 0–3);下垂只用四個分級,不再連續調整
+const AGE_DEF = { ideal: { grade: 0, full: 0.85 }, y: { grade: 0, full: 0.7 }, m: { grade: 1, full: 0.6 }, o: { grade: 2, full: 0.45 }, e: { grade: 3, full: 0.35 } };
+const PROFILE = { mode: 'cup', cup: 'C', age: 'ideal', grade: 0, pt: 0, ratio: 0.45, full: 0.85, ver: 0,
   height: 160, weight: 55, underbust: 75, bust: 90, snn: 19, nn: 19, imd: 3, snu: 40 };
 // 美學比例(Hwang 2015,西洋繪畫分析;Penn 1955 等邊三角形):胸骨上切跡到乳頭 ≈ 兩乳頭間距 ≈ 0.46 × 胸骨上切跡到肚臍
 const idealSNN = (snu) => 0.46 * snu;
@@ -2113,7 +2114,6 @@ function sectionSVG(ml) {
 }
 
 // ---------- 病人條件面板 ----------
-const PT_ZH = ['挺', '略垂', '輕度', '輕到中度', '中度', '中到重度', '重度'];
 // ---------- 乳房下垂分級(Regnault):依乳頭相對乳房下皺褶的高度 ----------
 // 目標:正常約高於皺褶 4.5 cm、I 度在皺褶高度、II 度低 2 cm(1–3)、III 度低 4.5 cm(>3)
 const PT_GRADE = [
@@ -2128,6 +2128,8 @@ const nipRelIMF = (pt, p = {}) => {
   const g = geomOf(params); const f = breastField(g.nU, g.nW, { ...params, g });
   return g.nW - f.drop + sideFrame(1).f.y * f.D - g.imf;
 };
+// 下垂只有四個分級:分級 → 該罩杯所需的下垂量(第 0 度為挺的理想外形)
+function syncGradePt() { PROFILE.pt = PROFILE.grade > 0 ? ptForGrade(PROFILE.grade) : 0; PROFILE.ver++; GEO.clear(); }
 function ptForGrade(gr, p = {}) {
   const t = PT_GRADE[gr].target; if (nipRelIMF(0, p) <= t) return 0;
   let lo = 0, hi = 3; for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (nipRelIMF(m, p) > t) lo = m; else hi = m; }
@@ -2136,7 +2138,7 @@ function ptForGrade(gr, p = {}) {
 const gradeOfPt = (pt) => { const d = nipRelIMF(pt) * 100; return d > 1 ? 0 : d >= -1 ? 1 : d >= -3 ? 2 : 3; };
 function buildProfileUI() {
   const F = { pfH: 'height', pfW: 'weight', pfUB: 'underbust', pfB: 'bust', pfSNN: 'snn', pfNN: 'nn', pfIMD: 'imd', pfSNU: 'snu' };
-  $('pfCup').value = PROFILE.cup; $('pfAge').value = PROFILE.age; $('pfPt').value = PROFILE.pt; $('pfUp').value = PROFILE.ratio; $('pfFull').value = PROFILE.full;
+  $('pfCup').value = PROFILE.cup; $('pfAge').value = PROFILE.age; $('pfGrade').value = String(PROFILE.grade); $('pfUp').value = PROFILE.ratio; $('pfFull').value = PROFILE.full;
   for (const [id, k] of Object.entries(F)) $(id).value = PROFILE[k];
   let timer = null; const later = () => { clearTimeout(timer); timer = setTimeout(profileChanged, 180); renderProfile(); };
   for (const b of $('pfMode').children) b.addEventListener('click', () => { PROFILE.mode = b.dataset.mode; later(); });
@@ -2144,11 +2146,10 @@ function buildProfileUI() {
   $('pfIdeal').addEventListener('click', () => { const v = Math.round(idealSNN(PROFILE.snu) * 2) / 2; PROFILE.snn = v; PROFILE.nn = v; $('pfSNN').value = v; $('pfNN').value = v; later(); });
   $('pfCup').addEventListener('change', () => { PROFILE.cup = $('pfCup').value; later(); });
   for (const [id, k] of Object.entries(F)) $(id).addEventListener('input', () => { const v = Number($(id).value); if (Number.isFinite(v) && v >= Number($(id).min) && v <= Number($(id).max)) { PROFILE[k] = v; later(); } });
-  $('pfAge').addEventListener('change', () => { PROFILE.age = $('pfAge').value; const d = AGE_DEF[PROFILE.age]; PROFILE.pt = d.pt; PROFILE.full = d.full; $('pfPt').value = d.pt; $('pfFull').value = d.full; $('pfGrade').value = ''; later(); });
+  $('pfAge').addEventListener('change', () => { PROFILE.age = $('pfAge').value; const d = AGE_DEF[PROFILE.age]; PROFILE.grade = d.grade; PROFILE.full = d.full; $('pfGrade').value = String(d.grade); $('pfFull').value = d.full; later(); });
   // 選下垂分級:依目前罩杯與量測值反推需要的下垂量
-  $('pfGrade').addEventListener('change', () => { const v = $('pfGrade').value; if (v === '') return; const gr = Number(v); PROFILE.full = PT_GRADE[gr].full; PROFILE.pt = ptForGrade(gr); $('pfPt').value = PROFILE.pt; $('pfFull').value = PROFILE.full; later(); });
+  $('pfGrade').addEventListener('change', () => { const gr = Number($('pfGrade').value); PROFILE.grade = gr; PROFILE.full = PT_GRADE[gr].full; $('pfFull').value = PROFILE.full; later(); });
   $('pfRatio').addEventListener('change', () => { const v = $('pfRatio').value; $('pfUpWrap').hidden = v !== 'custom'; if (v !== 'custom') { PROFILE.ratio = Number(v); PROFILE.full = v === '0.55' ? Math.max(PROFILE.full, 0.7) : AGE_DEF[PROFILE.age].full; $('pfUp').value = PROFILE.ratio; $('pfFull').value = PROFILE.full; } later(); });
-  $('pfPt').addEventListener('input', () => { PROFILE.pt = Number($('pfPt').value); $('pfGrade').value = ''; later(); });
   $('pfUp').addEventListener('input', () => { PROFILE.ratio = Number($('pfUp').value); later(); });
   $('pfFull').addEventListener('input', () => { PROFILE.full = Number($('pfFull').value); later(); });
   renderProfile();
@@ -2160,7 +2161,6 @@ function renderProfile() {
   const M = measures(); const cup = meas ? cupOf(M.d) : PROFILE.cup;
   const ideal = idealSNN(PROFILE.snu);
   $('pfCalc').textContent = `上下胸圍差 ${fmt(M.d)} cm,約 ${cup} 罩杯(下胸圍 ${fmt(M.ub)});BMI ${fmt(bmi())}。同樣罩杯,下胸圍越大乳房越寬;BMI 較高時組織較軟、較容易下垂。美學參考:胸骨上切跡到乳頭與兩乳頭間距約 ${fmt(ideal)} cm(0.46 × 胸骨上切跡到肚臍),目前 ${fmt(M.snn)} 與 ${fmt(M.nn)} cm。`;
-  $('pfPtV').textContent = PT_ZH[Math.round(PROFILE.pt * 2)] ?? '';
   $('pfUpV').textContent = `${Math.round(PROFILE.ratio * 100)}:${100 - Math.round(PROFILE.ratio * 100)}`;
   $('pfFullV').textContent = PROFILE.full < 0.3 ? '較扁(凹)' : PROFILE.full < 0.6 ? '平直' : '飽滿(凸)';
   $('pfSum').textContent = `${meas ? `${fmt(M.ub)}${cup}` : `${cup} 罩杯`}・${$('pfAge').selectedOptions[0].textContent}・上下極 ${Math.round(PROFILE.ratio * 100)}:${100 - Math.round(PROFILE.ratio * 100)}`;
@@ -2174,6 +2174,7 @@ function renderMeas() {
 }
 function profileChanged() {
   PROFILE.ver++; GEO.clear();
+  syncGradePt();
   for (const inst of instances) {
     computeTargets(inst); inst.gpaths = {};
     inst.root.remove(inst.gd.group); inst.gd.group.traverse((o) => o.geometry?.dispose()); buildGlandDetail(inst);
