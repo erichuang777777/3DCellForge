@@ -469,7 +469,8 @@ function naturalField(g, p, M, sc, lift) {
   // 胸骨上切跡到乳頭用立體直線距離,乳頭間距用左右距離
   {
     const n = fieldShape(t.uN, t.wN, { ...t, field: { ...field, w: fieldWeights(c0.c, 0), amp: c0.amp, S: 0 } });
-    const xV = M.nn / 200, zV = frontZ(xV) + f.z * n.D, dz = zV - NOTCH_Z;
+    // 深度只算胸壁(不含乳房突出):否則乳房越大、乳頭被抬得越高
+    const xV = M.nn / 200, dz = frontZ(xV) - NOTCH_Z;
     const yV = NOTCH_Y - Math.sqrt(Math.max((M.snn / 100) ** 2 - xV ** 2 - dz ** 2, 0.0025));
     const xF = xV - (f.x * n.D + n.lat), yF = yV - (f.y * n.D - n.drop);
     field.du0 = unwrapX(xF, frontZ(xF)) - unwrapX(MH_NIP.x, frontZ(MH_NIP.x)); field.dy0 = yF - MH_NIP.y + lift;

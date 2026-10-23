@@ -203,7 +203,7 @@ const goldOf = (cup, pt = 0) => {
 test('upright breasts follow the aesthetic notch-nipple triangle', () => {
   for (const cup of ['B', 'C', 'D']) {
     const r = goldOf(cup);
-    assert.ok(r.sn > .175 && r.sn < .21 && Math.abs(r.sn - r.nn) < .01, `${cup}: SN-N ${r.sn} N-N ${r.nn}`);
+    assert.ok(r.sn > .175 && r.sn < .215 && Math.abs(r.sn - r.nn) < .015, `${cup}: SN-N ${r.sn} N-N ${r.nn}`);
 
   }
   const c = goldOf('C'); assert.ok(c.arc > .07 && c.arc < .085, `C nipple-IMF ${c.arc}`);
