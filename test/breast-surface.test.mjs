@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import * as THREE from 'three';
-import { surfaceShape, implantEnvelopeShape } from '../public/breast-reconstruction-atlas/surface.js';
+import * as surface from '../public/breast-reconstruction-atlas/surface.js';
+const { surfaceShape, implantEnvelopeShape } = surface;
 
 const base = { uN: 0, wN: 0, Rmed: .075, Rlat: .0663, Rlo: .0666, Rup: .098,
   sc: 1, P: .0465, full: .85, round: false, shape: 'natural', dropA: 0 };
@@ -82,7 +83,7 @@ test('flat mastectomy envelope stays thin and has no lower-pole drop', () => {
 // into gravity even though the pure shape evaluator was independent.
 const appSource = fs.readFileSync(new URL('../public/breast-reconstruction-atlas/app.js', import.meta.url), 'utf8');
 const fieldSource = appSource.slice(appSource.indexOf('const SIDES ='), appSource.indexOf('function prepBreastRegions'));
-const context = vm.createContext({ THREE, surfaceShape, implantEnvelopeShape, QN: { uoq: [.025, .025] } });
+const context = vm.createContext({ THREE, ...surface, QN: { uoq: [.025, .025] } });
 vm.runInContext(fieldSource + '\nthis.fieldAPI = { breastField, geomOf, PROFILE, nipBump, chestChart, chestShift, applyNippleRelief };', context);
 const { breastField, geomOf, PROFILE, nipBump, chestChart, chestShift, applyNippleRelief } = context.fieldAPI;
 
@@ -97,16 +98,71 @@ test('application nipple and resection detail leave material gravity unchanged',
   assert.equal(nipple.drop, bare.drop); assert.equal(defect.drop, bare.drop);
 });
 
-test('application keeps attachments fixed as ptosis changes for every cup', () => {
+test('application attachments never rise and the fold descends only slightly with ptosis', () => {
   for (const cup of ['A', 'B', 'C', 'D', 'E', 'F']) {
     PROFILE.cup = cup; PROFILE.ver++;
     const a = geomOf({ P: .064, shape: 'natural', pt: 0 });
     for (const pt of [.5, 1, 2, 3]) {
       const g = geomOf({ P: .064, shape: 'natural', pt });
-      assert.equal(g.top, a.top); assert.equal(g.imf, a.imf);
+      assert.ok(g.top <= a.top + .005); assert.ok(g.imf <= a.imf + .003); // the sculpted upper edge and fold may shift a few mm with tissue softness
+      assert.ok(a.imf - g.imf < .03, `${cup} fold moved ${(a.imf - g.imf) * 100} cm`);
       assert.equal(g.imf, g.bot);
     }
   }
+});
+
+// Natural breasts: MakeHuman (CC0) sculpted cup x firmness fields plus a gravity channel.
+const fy = -.05 / Math.hypot(.25, .05, 1);
+const nipRel = (cup, pt) => {
+  PROFILE.cup = cup; PROFILE.ver++;
+  const p = { P: .064, shape: 'natural', pt }; const g = geomOf(p); const n = breastField(g.nU, g.nW, { ...p, g });
+  return g.nW - n.drop + fy * n.D - g.imf;
+};
+
+test('every cup reaches all four Regnault grades within the ptosis range', () => {
+  for (const cup of ['A', 'B', 'C', 'D', 'E', 'F']) {
+    assert.ok(nipRel(cup, 0) > .03, `${cup} upright nipple is well above the fold`);
+    assert.ok(nipRel(cup, 3) < -.045, `${cup} reaches grade III (${(nipRel(cup, 3) * 100).toFixed(1)} cm)`);
+    let prev = Infinity;
+    for (let pt = 0; pt <= 3; pt += .25) { const r = nipRel(cup, pt); assert.ok(r < prev + 1e-9); prev = r; }
+  }
+});
+
+test('the same laxity drops a heavier breast further', () => {
+  const descent = (cup) => nipRel(cup, 0) - nipRel(cup, 1.5);
+  assert.ok(descent('A') < descent('C')); assert.ok(descent('C') < descent('F'));
+});
+
+test('volume and projection grow with cup size', () => {
+  let pv = 0, pp = 0;
+  for (const cup of ['A', 'B', 'C', 'D', 'E', 'F']) {
+    PROFILE.cup = cup; PROFILE.ver++;
+    const g = geomOf({ P: .064, shape: 'natural', pt: 0 });
+    assert.ok(g.vol > pv && g.P > pp); pv = g.vol; pp = g.P;
+  }
+});
+
+test('inframammary fold is a U-shaped curve, not a horizontal line', () => {
+  for (const cup of ['B', 'D']) {
+    PROFILE.cup = cup; PROFILE.ver++;
+    const p = { P: .064, shape: 'natural', pt: 0 }; const g = geomOf(p);
+    // lowest chest-wall attachment along a vertical line: last row (from below) with tissue
+    const lowest = (du) => { for (let dw = g.wN - .2; dw < g.wN; dw += .001) if (breastField(du, dw, { ...p, g }).D > .003) return dw; return g.wN; };
+    // The sculpted fold rises steeply toward the sternum and more gently laterally.
+    const c = lowest(g.uN), m = lowest(g.uN - .045), l = lowest(g.uN + .03);
+    assert.ok(m > c + .01 && l >= c, `${cup}: medial ${(m - c) * 100} lateral ${(l - c) * 100} cm above centre`);
+  }
+});
+
+test('natural field is finite and vanishes far from the breast', () => {
+  PROFILE.cup = 'E'; PROFILE.ver++;
+  const p = { P: .064, shape: 'natural', pt: 2 }; const g = geomOf(p);
+  for (let du = -.2; du <= .2; du += .01) for (let dw = -.3; dw <= .25; dw += .01) {
+    const v = breastField(du, dw, { ...p, g });
+    assert.ok(Number.isFinite(v.D) && Number.isFinite(v.drop) && Number.isFinite(v.lat));
+  }
+  const far = breastField(g.uN, g.wN + .3, { ...p, g }); assert.equal(far.D, 0); assert.equal(far.drop, 0);
+  PROFILE.cup = 'C'; PROFILE.ver++;
 });
 
 test('nipple relief follows a hanging surface normal rather than anterior axis', () => {
@@ -127,4 +183,34 @@ test('chest chart exactly follows a sloped source triangle and is stationary at 
   assert.ok(Math.abs(chestAt(0, 1.2, 0) - .15) < 1e-7);
   assert.equal(chestShift(reg, 0, 1.1, .125, 0, 0), 0);
   assert.ok(Math.abs(chestShift(reg, 0, 1.1, .125, 0, .1) - .025) < 1e-7);
+});
+
+// Aesthetic reference (clinical teaching ratios): sternal notch-nipple-nipple equilateral triangle of
+// 18-21 cm, upper:lower pole 45:55 about the nipple, nipple-to-IMF 7-8 cm over the skin for a C cup.
+const goldOf = (cup, pt = 0) => {
+  PROFILE.cup = cup; PROFILE.ver++;
+  const p = { P: .064, shape: 'natural', pt }; const g = geomOf(p); const l = Math.hypot(.25, .05, 1), f = [.25 / l, -.05 / l, 1 / l];
+  const n = breastField(g.nU, g.nW, { ...p, g });
+  const nx = g.nU + .097 + f[0] * n.D + n.lat, ny = g.nW + 1.252 - n.drop + f[1] * n.D, nz = surface.frontZ(g.nU + .097) + f[2] * n.D;
+  let arc = 0, prev = null;
+  for (let dw = g.nW; dw > g.nW - .2; dw -= .001) {
+    const v = breastField(g.uN, dw, { ...p, g }); if (v.D <= .0005) break;
+    const q = [dw - v.drop + f[1] * v.D, surface.frontZ(g.uN + .097) + f[2] * v.D]; if (prev) arc += Math.hypot(q[0] - prev[0], q[1] - prev[1]); prev = q;
+  }
+  return { sn: Math.hypot(nx, ny - 1.41, nz - .06), nn: 2 * nx, upper: surface.fieldPoleRatio(g, g.imf), arc };
+};
+
+test('upright breasts follow the aesthetic notch-nipple triangle', () => {
+  for (const cup of ['B', 'C', 'D']) {
+    const r = goldOf(cup);
+    assert.ok(r.sn > .175 && r.sn < .215 && Math.abs(r.sn - r.nn) < .02, `${cup}: SN-N ${r.sn} N-N ${r.nn}`);
+
+  }
+  const c = goldOf('C'); assert.ok(c.arc > .07 && c.arc < .085, `C nipple-IMF ${c.arc}`);
+});
+
+test('ptosis lengthens the notch-nipple distance past the mastopexy threshold', () => {
+  const a = goldOf('C', 0), b = goldOf('C', 2), c = goldOf('C', 3);
+  assert.ok(a.sn < .21 && b.sn > .21 && c.sn > b.sn);
+  PROFILE.cup = 'C'; PROFILE.ver++;
 });
